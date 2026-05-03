@@ -30,7 +30,7 @@ from tensorflow import keras
 # ============================================================
 # KONFIGURASI  (simpan di .env untuk production)
 # ============================================================
-SECRET_KEY      = "adadeqfhuq97fgqjka"   # ganti ini!
+SECRET_KEY      = "ashgw!?09@)kj"   # ganti ini!
 ALGORITHM       = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 hari
 
@@ -215,13 +215,54 @@ class DashboardStats(BaseModel):
 def preprocess_and_extract_mfcc(audio_bytes: bytes) -> np.ndarray:
     """
     Proses audio bytes → MFCC 3-channel siap inferensi.
+    Mendukung format WAV, WebM, OGG dari browser (didecode dengan PyAV jika bukan WAV).
     Alur: load → trim silence → pad/truncate → normalisasi → MFCC + Delta + Delta²
     """
-    # Load dari bytes
-    y, sr = librosa.load(io.BytesIO(audio_bytes), sr=SAMPLE_RATE, mono=True)
+    try:
+        # Coba load dengan librosa (berfungsi jika format WAV asli)
+        y, sr = librosa.load(io.BytesIO(audio_bytes), sr=SAMPLE_RATE, mono=True)
+    except Exception:
+        # Jika gagal (biasanya WebM/OGG dari MediaRecorder), gunakan PyAV
+        import av
+        container = av.open(io.BytesIO(audio_bytes))
+        stream = container.streams.audio[0]
+        orig_sr = stream.sample_rate
+        
+        frames_data = []
+        for frame in container.decode(stream):
+            frames_data.append(frame.to_ndarray())
+            
+        if not frames_data:
+            raise ValueError("Audio kosong atau format tidak didukung")
+            
+        y = np.concatenate(frames_data, axis=1)
+        
+        # Konversi ke float32 rentang [-1.0, 1.0]
+        if y.dtype != np.float32:
+            y = y.astype(np.float32)
+            max_val = np.max(np.abs(y))
+            if max_val > 1.0:
+                y = y / 32768.0
+                
+        # Konversi ke mono (rata-rata antar channel)
+        if y.shape[0] > 1:
+            y = np.mean(y, axis=0)
+        else:
+            y = y[0]
+            
+        # Resample ke target SAMPLE_RATE
+        if orig_sr != SAMPLE_RATE:
+            y = librosa.resample(y, orig_sr=orig_sr, target_sr=SAMPLE_RATE)
+        
+        sr = SAMPLE_RATE
 
     # Trim silence
     y, _ = librosa.effects.trim(y, top_db=20)
+
+    # Cek apakah audio kosong setelah di-trim atau suaranya terlalu pelan (hanya noise)
+    # Ambang batas 0.02 cukup umum untuk mendeteksi keheningan pada audio float32 [-1.0, 1.0]
+    if len(y) == 0 or np.max(np.abs(y)) < 0.015:
+        raise ValueError("Suara tidak terdeteksi atau terlalu pelan. Mohon bicara lebih jelas.")
 
     # Pad atau truncate ke panjang tetap
     if len(y) < MAX_LEN:
@@ -230,8 +271,9 @@ def preprocess_and_extract_mfcc(audio_bytes: bytes) -> np.ndarray:
         y = y[:MAX_LEN]
 
     # Normalisasi amplitudo
-    if np.max(np.abs(y)) > 0:
-        y = y / np.max(np.abs(y))
+    max_amp = np.max(np.abs(y))
+    if max_amp > 0:
+        y = y / max_amp
 
     # Ekstraksi MFCC
     mfcc        = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC, n_fft=N_FFT, hop_length=HOP_LEN)
@@ -364,8 +406,10 @@ async def evaluate_pronunciation(
     Endpoint utama: terima file audio → preprocessing MFCC → inferensi CNN
     → simpan hasil ke DB → kembalikan skor ke frontend.
     """
-    # 1. Validasi format audio
-    if not audio.content_type in ["audio/wav", "audio/wave", "audio/webm", "audio/ogg"]:
+    # 1. Validasi format audio — browser bisa kirim "audio/webm;codecs=opus" dll
+    ALLOWED_TYPES = ("audio/wav", "audio/wave", "audio/webm", "audio/ogg", "audio/mp4")
+    content_type  = (audio.content_type or "").lower()
+    if not any(content_type.startswith(t) for t in ALLOWED_TYPES):
         raise HTTPException(400, f"Format tidak didukung: {audio.content_type}")
 
     # 2. Validasi letter_id
@@ -484,7 +528,7 @@ def get_history(
         """
         SELECT e.id, h.base_letter, h.harakat, h.arabic_script,
                e.accuracy_score, e.is_correct,
-               DATE_FORMAT(e.created_at, '%%Y-%%m-%%dT%%H:%%i:%%s') AS created_at
+               CAST(e.created_at AS CHAR) AS created_at
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
