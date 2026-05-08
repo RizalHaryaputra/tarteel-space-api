@@ -30,14 +30,14 @@ from tensorflow import keras
 # ============================================================
 # KONFIGURASI  (simpan di .env untuk production)
 # ============================================================
-SECRET_KEY      = "adadeqfhuq97fgqjka"   # ganti ini!
+SECRET_KEY      = "asdfnjwnfifujonwruncoewi902unfwkkwe"   
 ALGORITHM       = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 hari
 
 DB_CONFIG = {
     "host"    : "localhost",
     "user"    : "root",
-    "password": "",               # sesuaikan dengan password MySQL kamu
+    "password": "",               
     "database": "db_tarteel_space",
     "charset" : "utf8mb4",
 }
@@ -212,37 +212,136 @@ class DashboardStats(BaseModel):
 # ============================================================
 # HELPER — Audio preprocessing + MFCC extraction
 # ============================================================
+def load_audio_robust(audio_bytes: bytes) -> tuple:
+    """
+    Load audio bytes → numpy array float32 [-1, 1] pada SAMPLE_RATE.
+
+    Urutan prioritas:
+      1. PyAV  — bekerja untuk WebM/Opus langsung dari browser (terbukti)
+      2. soundfile — cepat untuk WAV bersih
+      3. librosa   — last resort
+
+    PyAV normalisasi:
+      - Format fltp (float planar) → nilai sudah [-1,1], tidak perlu dibagi
+      - Format s16p (int16 planar) → dibagi 32768.0
+      - Deteksi otomatis dari dtype hasil to_ndarray()
+    """
+    import av
+    import soundfile as sf
+
+    buf = io.BytesIO(audio_bytes)
+
+    # ── Strategi 1: PyAV — handle WebM/Opus dari browser ──────────────
+    try:
+        buf.seek(0)
+        container   = av.open(buf)
+        stream      = container.streams.audio[0]
+        orig_sr     = stream.sample_rate
+
+        frames_data = []
+        for frame in container.decode(stream):
+            arr = frame.to_ndarray()   # shape: (channels, samples)
+
+            # Normalisasi berdasarkan dtype ASLI frame (bukan setelah konversi)
+            if arr.dtype == np.int16:
+                # s16/s16p: range [-32768, 32767] → bagi 32768
+                arr = arr.astype(np.float32) / 32768.0
+            elif arr.dtype == np.float32:
+                # fltp: sudah [-1,1], tidak perlu apa-apa
+                pass
+            else:
+                # Format lain (s32, dll): normalisasi ke [-1,1] berdasarkan max
+                arr = arr.astype(np.float32)
+                mx  = np.abs(arr).max()
+                if mx > 0:
+                    arr = arr / mx
+
+            frames_data.append(arr)
+
+        if not frames_data:
+            raise ValueError("Tidak ada frame audio")
+
+        y = np.concatenate(frames_data, axis=1)          # (channels, total_samples)
+        y = y.mean(axis=0) if y.shape[0] > 1 else y[0]  # → mono (total_samples,)
+        y = np.clip(y, -1.0, 1.0)
+
+        if orig_sr != SAMPLE_RATE:
+            y = librosa.resample(y, orig_sr=orig_sr, target_sr=SAMPLE_RATE)
+
+        print(f"[Audio] PyAV OK | sr={orig_sr} | samples={len(y)} | peak={np.abs(y).max():.3f}")
+        return y, SAMPLE_RATE
+
+    except Exception as e:
+        print(f"[Audio] PyAV gagal: {e}")
+
+    # ── Strategi 2: soundfile — untuk WAV bersih ───────────────────────
+    try:
+        buf.seek(0)
+        y, orig_sr = sf.read(buf, dtype='float32', always_2d=False)
+        if y.ndim == 2:
+            y = y.mean(axis=1)
+        if orig_sr != SAMPLE_RATE:
+            y = librosa.resample(y, orig_sr=orig_sr, target_sr=SAMPLE_RATE)
+        print(f"[Audio] soundfile OK | sr={orig_sr} | samples={len(y)}")
+        return y, SAMPLE_RATE
+    except Exception as e:
+        print(f"[Audio] soundfile gagal: {e}")
+
+    # ── Strategi 3: librosa fallback ───────────────────────────────────
+    try:
+        buf.seek(0)
+        y, sr = librosa.load(buf, sr=SAMPLE_RATE, mono=True)
+        print(f"[Audio] librosa OK | sr={sr} | samples={len(y)}")
+        return y, sr
+    except Exception as e:
+        raise ValueError(
+            f"Format audio tidak dikenali. Detail: {e}"
+        )
+
+
 def preprocess_and_extract_mfcc(audio_bytes: bytes) -> np.ndarray:
     """
     Proses audio bytes → MFCC 3-channel siap inferensi.
-    Alur: load → trim silence → pad/truncate → normalisasi → MFCC + Delta + Delta²
+    Audio dari browser sudah WAV 22050 Hz mono (konversi via Web Audio API).
+    Alur: load → validasi → trim silence → pad/truncate → normalisasi → MFCC+Δ+ΔΔ
     """
-    # Load dari bytes
-    y, sr = librosa.load(io.BytesIO(audio_bytes), sr=SAMPLE_RATE, mono=True)
+    # 1. Load audio dengan fallback yang aman
+    y, sr = load_audio_robust(audio_bytes)
 
-    # Trim silence
+    # 2. Validasi: audio tidak kosong dan cukup keras
+    if len(y) == 0:
+        raise ValueError("Audio kosong. Coba rekam ulang.")
+
+    peak = np.max(np.abs(y))
+    if peak < 0.015:
+        raise ValueError("Suara tidak terdeteksi atau terlalu pelan. Bicara lebih dekat ke mikrofon.")
+
+    # 3. Normalisasi amplitudo ke [-1, 1] SEBELUM trim
+    #    Ini penting agar top_db trim konsisten di semua kondisi mikrofon
+    y = y / peak
+
+    # 4. Trim silence
     y, _ = librosa.effects.trim(y, top_db=20)
 
-    # Pad atau truncate ke panjang tetap
+    if len(y) == 0:
+        raise ValueError("Audio hanya berisi keheningan setelah diproses.")
+
+    # 5. Pad atau truncate ke panjang tetap (sama persis dengan training)
     if len(y) < MAX_LEN:
         y = np.pad(y, (0, MAX_LEN - len(y)), mode="constant")
     else:
         y = y[:MAX_LEN]
 
-    # Normalisasi amplitudo
-    if np.max(np.abs(y)) > 0:
-        y = y / np.max(np.abs(y))
-
-    # Ekstraksi MFCC
-    mfcc        = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC, n_fft=N_FFT, hop_length=HOP_LEN)
+    # 6. Ekstraksi MFCC + Delta + Delta² — parameter HARUS identik dengan training
+    mfcc        = librosa.feature.mfcc(y=y, sr=SAMPLE_RATE, n_mfcc=N_MFCC, n_fft=N_FFT, hop_length=HOP_LEN)
     delta_mfcc  = librosa.feature.delta(mfcc)
     delta2_mfcc = librosa.feature.delta(mfcc, order=2)
 
-    # Stack 3 channel → transpose ke (mfcc, time, channel) untuk Keras/TFLite
-    combined = np.stack([mfcc, delta_mfcc, delta2_mfcc], axis=0)   # (3, 40, T)
-    combined = np.transpose(combined, (1, 2, 0))                   # (40, T, 3)
+    # 7. Stack 3 channel → transpose ke (mfcc, time, channel) untuk Keras
+    combined = np.stack([mfcc, delta_mfcc, delta2_mfcc], axis=0)  # (3, 40, T)
+    combined = np.transpose(combined, (1, 2, 0))                  # (40, T, 3)
 
-    # Normalisasi Z-score (pakai mean & std dari training)
+    # 8. Normalisasi Z-score — WAJIB pakai mean & std dari data TRAINING
     mean = ml_state["norm_mean"]
     std  = ml_state["norm_std"]
     combined = (combined - mean) / (std + 1e-8)
@@ -250,9 +349,27 @@ def preprocess_and_extract_mfcc(audio_bytes: bytes) -> np.ndarray:
     return combined.astype(np.float32)
 
 
+# Suhu softmax — nilai > 1 membuat distribusi lebih "lunak"/tidak terlalu yakin.
+# Ini kompensasi sementara untuk model yang overfitting.
+# Nilai ideal: cari dengan cara validasi manual (biasanya 1.5–3.0)
+TEMPERATURE = 2.0
+
+
+def softmax_with_temperature(logits: np.ndarray, temperature: float) -> np.ndarray:
+    """Terapkan temperature scaling pada logits sebelum softmax."""
+    logits = logits / temperature
+    logits = logits - np.max(logits)   # numerical stability
+    exp    = np.exp(logits)
+    return exp / np.sum(exp)
+
+
 def run_inference(mfcc_feature: np.ndarray) -> tuple[str, float, list]:
     """
-    Jalankan model Keras → kembalikan (label, confidence, top3)
+    Jalankan model Keras → kembalikan (label, confidence, top3).
+
+    Menggunakan temperature scaling untuk mengurangi overconfidence.
+    Model yang overfitting cenderung memproduksi softmax mendekati 100%
+    meski inputnya salah — temperature > 1 menyebarkan probabilitas lebih merata.
     """
     model     = ml_state["model"]
     idx2label = ml_state["idx2label"]
@@ -260,8 +377,18 @@ def run_inference(mfcc_feature: np.ndarray) -> tuple[str, float, list]:
     # Tambahkan dimensi batch: (40, T, 3) → (1, 40, T, 3)
     input_data = np.expand_dims(mfcc_feature, axis=0)
 
-    # Inferensi — verbose=0 agar tidak print progress bar
-    output = model.predict(input_data, verbose=0)[0]   # shape: (84,)
+    # Ambil output SEBELUM softmax (logits) jika memungkinkan,
+    # atau pakai raw softmax output jika model tidak expose logits
+    raw_output = model.predict(input_data, verbose=0)[0]   # shape: (84,)
+
+    # Jika output sudah softmax (sum ≈ 1), konversi balik ke log-space (logit proxy)
+    # agar temperature scaling bermakna
+    if abs(raw_output.sum() - 1.0) < 0.01:
+        # Output adalah probabilitas → ubah ke log agar temperature bisa diterapkan
+        logit_proxy = np.log(np.clip(raw_output, 1e-9, 1.0))
+        output = softmax_with_temperature(logit_proxy, TEMPERATURE)
+    else:
+        output = softmax_with_temperature(raw_output, TEMPERATURE)
 
     top_idx   = int(np.argmax(output))
     top_label = idx2label[top_idx]
@@ -270,6 +397,11 @@ def run_inference(mfcc_feature: np.ndarray) -> tuple[str, float, list]:
     # Top-3 prediksi
     top3_idx  = np.argsort(output)[::-1][:3]
     top3      = [{"label": idx2label[i], "score": round(float(output[i])*100, 2)} for i in top3_idx]
+
+    # Debug log — lihat distribusi probabilitas top-5
+    top5_idx = np.argsort(output)[::-1][:5]
+    print(f"[Inference] Top-5: " +
+          " | ".join(f"{idx2label[i]}={output[i]*100:.1f}%" for i in top5_idx))
 
     return top_label, confidence, top3
 
@@ -364,8 +496,10 @@ async def evaluate_pronunciation(
     Endpoint utama: terima file audio → preprocessing MFCC → inferensi CNN
     → simpan hasil ke DB → kembalikan skor ke frontend.
     """
-    # 1. Validasi format audio
-    if not audio.content_type in ["audio/wav", "audio/wave", "audio/webm", "audio/ogg"]:
+    # 1. Validasi format audio — browser bisa kirim "audio/webm;codecs=opus" dll
+    ALLOWED_TYPES = ("audio/wav", "audio/wave", "audio/webm", "audio/ogg", "audio/mp4")
+    content_type  = (audio.content_type or "").lower()
+    if not any(content_type.startswith(t) for t in ALLOWED_TYPES):
         raise HTTPException(400, f"Format tidak didukung: {audio.content_type}")
 
     # 2. Validasi letter_id
@@ -484,7 +618,7 @@ def get_history(
         """
         SELECT e.id, h.base_letter, h.harakat, h.arabic_script,
                e.accuracy_score, e.is_correct,
-               DATE_FORMAT(e.created_at, '%%Y-%%m-%%dT%%H:%%i:%%s') AS created_at
+               CAST(e.created_at AS CHAR) AS created_at
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
