@@ -1,4 +1,5 @@
 import uuid
+import time
 from typing import Optional
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
 
@@ -17,6 +18,7 @@ async def evaluate_pronunciation(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
+    start_time = time.time()
     ALLOWED_TYPES = ("audio/wav", "audio/wave", "audio/webm", "audio/ogg", "audio/mp4")
     content_type = (audio.content_type or "").lower()
     if not any(content_type.startswith(t) for t in ALLOWED_TYPES):
@@ -71,6 +73,9 @@ async def evaluate_pronunciation(
         feedback = f"Hampir benar! Perhatikan makhraj huruf {letter['base_letter']}, skor Anda {accuracy_score:.1f}%."
     else:
         feedback = f"Perlu latihan lagi. Dengarkan contoh pelafalan {letter['base_letter']} dan coba ulangi."
+
+    elapsed_time = time.time() - start_time
+    print(f"[Evaluate] {letter['base_letter']} dievaluasi dalam {elapsed_time:.3f} detik")
 
     return EvaluationResult(
         letter_id=letter_id,
