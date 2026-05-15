@@ -27,6 +27,30 @@ async def lifespan(app: FastAPI):
     ml_state["norm_mean"] = float(np.load(NORM_MEAN_PATH))
     ml_state["norm_std"] = float(np.load(NORM_STD_PATH))
 
+    print("🔥 [Startup] Melakukan warm-up model dan seluruh pipeline audio...")
+    try:
+        import io
+        import soundfile as sf
+        from services.ml_service import preprocess_and_extract_mfcc, run_inference
+        
+        # 1. Buat dummy audio (sine wave) agar melewati batas silence/trim
+        sr = 22050
+        t = np.linspace(0, 1, sr, endpoint=False)
+        dummy_audio = 0.5 * np.sin(2 * np.pi * 440 * t).astype(np.float32)
+        
+        buf = io.BytesIO()
+        sf.write(buf, dummy_audio, sr, format='WAV')
+        wav_bytes = buf.getvalue()
+        
+        # 2. Jalankan seluruh pipeline preprocessing (Numba JIT komplit: resample, trim, mfcc, delta)
+        dummy_mfcc = preprocess_and_extract_mfcc(wav_bytes)
+        
+        # 3. Jalankan inferensi (TensorFlow graph)
+        run_inference(dummy_mfcc)
+        print("✅ [Startup] Warm-up selesai secara menyeluruh!")
+    except Exception as e:
+        print(f"⚠️ [Startup] Peringatan: Warm-up gagal ({e})")
+
     print(f"✅ [Startup] Model siap! Total kelas: {len(ml_state['idx2label'])}")
 
     yield

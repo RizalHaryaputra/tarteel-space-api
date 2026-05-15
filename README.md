@@ -38,7 +38,7 @@ pip install -r requirements.txt
 ```
 
 ### 3. Konfigurasi Environment Variables
-1. Salin format dari `.env.example` (jika ada) atau buat file `.env` baru di *root* direktori.
+1. Salin format dari `.env.example` atau buat file `.env` baru di *root* direktori.
 2. Atur kredensial database (username, password), *secret key* JWT, dan lokasi model.
    Contoh `.env`:
    ```env
