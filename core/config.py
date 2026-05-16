@@ -21,6 +21,7 @@ LABEL_MAP_PATH = os.getenv("LABEL_MAP_PATH", "./model/label_mapping.json")
 NORM_MEAN_PATH = os.getenv("NORM_MEAN_PATH", "./model/norm_mean.npy")
 NORM_STD_PATH = os.getenv("NORM_STD_PATH", "./model/norm_std.npy")
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads/audio"))
+AUDIO_DIR = Path(os.getenv("AUDIO_DIR", "./audio"))
 
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "22050"))
 DURATION = float(os.getenv("DURATION", "2.0"))
