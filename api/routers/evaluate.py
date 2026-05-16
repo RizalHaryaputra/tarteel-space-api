@@ -39,11 +39,11 @@ async def evaluate_pronunciation(
     except Exception as e:
         raise HTTPException(422, f"Gagal memproses audio: {str(e)}")
 
-    top_label, confidence, top3 = run_inference(mfcc_feature)
-
     expected_label = letter["model_label"]
-    is_correct = (top_label == expected_label) and (confidence >= THRESHOLD)
-    accuracy_score = round(confidence, 2)
+    top_label, top_confidence, top3, expected_confidence = run_inference(mfcc_feature, expected_label)
+
+    is_correct = (top_label == expected_label) and (top_confidence >= THRESHOLD)
+    accuracy_score = round(expected_confidence, 2)
 
     save_audio = True
     audio_path = None

@@ -124,9 +124,10 @@ def softmax_with_temperature(logits: np.ndarray, temperature: float) -> np.ndarr
     return exp / np.sum(exp)
 
 
-def run_inference(mfcc_feature: np.ndarray) -> tuple[str, float, list]:
+def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple[str, float, list, float]:
     model = ml_state["model"]
     idx2label = ml_state["idx2label"]
+    label2idx = ml_state.get("label2idx", {})
 
     input_data = np.expand_dims(mfcc_feature, axis=0)
     raw_output = model.predict(input_data, verbose=0)[0]
@@ -141,10 +142,24 @@ def run_inference(mfcc_feature: np.ndarray) -> tuple[str, float, list]:
     top_label = idx2label[top_idx]
     confidence = float(output[top_idx]) * 100.0
 
+    expected_confidence = 0.0
+    if expected_label:
+        exp_idx = None
+        for key, idx in label2idx.items():
+            if expected_label in key:
+                exp_idx = idx
+                break
+        if exp_idx is not None:
+            expected_confidence = float(output[exp_idx]) * 100.0
+    elif expected_label is None:
+        expected_confidence = confidence
+
     top3_idx = np.argsort(output)[::-1][:3]
     top3 = [{"label": idx2label[i], "score": round(float(output[i])*100, 2)} for i in top3_idx]
 
     top5_idx = np.argsort(output)[::-1][:5]
     print(f"[Inference] Top-5: " + " | ".join(f"{idx2label[i]}={output[i]*100:.1f}%" for i in top5_idx))
+    if expected_label:
+        print(f"[Inference] Target: {expected_label} = {expected_confidence:.1f}%")
 
-    return top_label, confidence, top3
+    return top_label, confidence, top3, expected_confidence
