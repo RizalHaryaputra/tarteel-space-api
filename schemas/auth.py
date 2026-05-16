@@ -10,3 +10,10 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_name: str
     user_id: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
