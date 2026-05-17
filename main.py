@@ -3,13 +3,14 @@ from contextlib import asynccontextmanager
 import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from tensorflow import keras
 
 from core.config import (
-    MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, UPLOAD_DIR
+    MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, UPLOAD_DIR, SESSION_SECRET_KEY
 )
 from services.ml_service import ml_state
-from api.routers import auth, letters, evaluate, sessions, history
+from api.routers import auth, letters, evaluate, sessions, history, oauth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -73,8 +74,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET_KEY)
 
 app.include_router(auth.router)
+app.include_router(oauth.router)
 app.include_router(letters.router)
 app.include_router(evaluate.router)
 app.include_router(sessions.router)
