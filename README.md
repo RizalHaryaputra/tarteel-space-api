@@ -3,7 +3,9 @@
 Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan huruf hijaiyah berbasis Artificial Intelligence (AI). Dibangun menggunakan **FastAPI**, **TensorFlow/Keras**, dan **MySQL**.
 
 ## ✨ Fitur Utama
-- **Autentikasi Pengguna**: Registrasi dan Login yang aman menggunakan token JWT.
+- **Autentikasi Pengguna**: Registrasi, Login, dan manajemen token JWT yang aman.
+- **Single Sign-On (SSO)**: Mendukung integrasi OAuth 2.0 untuk login via Google dan GitHub.
+- **Pemulihan Akun**: Fitur lupa & reset password menggunakan token aman dan notifikasi email via SMTP.
 - **Evaluasi Pelafalan (AI)**: Mengekstrak fitur audio (MFCC) dengan Librosa dan memprediksi keakuratan pelafalan menggunakan model Convolutional Neural Network (CNN).
 - **Manajemen Sesi & Riwayat**: Mencatat setiap sesi latihan dan skor evaluasi.
 - **Dashboard Statistik**: Memberikan ringkasan performa harian pengguna, streak latihan, dan menganalisis huruf terlemah/terkuat.
@@ -12,7 +14,8 @@ Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan hur
 - **Framework Web**: FastAPI (Uvicorn)
 - **Machine Learning**: TensorFlow (Keras), Librosa, Numpy
 - **Database**: MySQL (MySQL Connector Python + Pooling)
-- **Keamanan & Konfigurasi**: Passlib (Bcrypt), python-jose (JWT), python-dotenv
+- **Keamanan & Autentikasi**: Passlib (Bcrypt), python-jose (JWT), Authlib (OAuth 2.0)
+- **Email & Utilitas**: smtplib, httpx, python-dotenv
 
 ## 📋 Persyaratan Sistem
 - Python 3.11 atau lebih baru
@@ -42,11 +45,28 @@ pip install -r requirements.txt
 2. Atur kredensial database (username, password), *secret key* JWT, dan lokasi model.
    Contoh `.env`:
    ```env
+   # Keamanan & Web
    SECRET_KEY=secret_anda
+   FRONTEND_URL=http://localhost:3000
+
+   # Database MySQL
    DB_HOST=localhost
    DB_USER=root
    DB_PASSWORD=
    DB_DATABASE=db_tarteel_space
+
+   # Konfigurasi SMTP (Reset Password)
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=email_anda@gmail.com
+   SMTP_PASSWORD=16_digit_app_password
+
+   # Kredensial OAuth (SSO)
+   GOOGLE_CLIENT_ID=...
+   GOOGLE_CLIENT_SECRET=...
+   GITHUB_CLIENT_ID=...
+   GITHUB_CLIENT_SECRET=...
+   SESSION_SECRET_KEY=kunci_rahasia_sesi
    ```
 
 ### 4. Setup Database MySQL
@@ -71,11 +91,11 @@ Anda dapat melihat Dokumentasi API interaktif secara otomatis di: **http://local
 
 ## 📂 Struktur Direktori Utama
 Proyek ini mengadopsi arsitektur modular standar FastAPI untuk kemudahan pemeliharaan:
-- `api/` : Berisi *routers* (endpoint API) yang dipisah per-fitur (auth, evaluate, letters, dsb.) dan komponen *dependencies* (seperti autentikasi & DB).
+- `api/` : Berisi *routers* (endpoint API) yang dipisah per-fitur (auth, oauth, evaluate, letters, dsb.) dan komponen *dependencies* (seperti autentikasi & DB).
 - `core/` : Menyimpan konfigurasi global (`config.py`) yang membaca file `.env` dan utilitas keamanan (hashing, JWT).
 - `db/` : Berisi konfigurasi dan setup *connection pool* untuk MySQL.
 - `schemas/` : Mendefinisikan struktur data I/O (Request/Response) menggunakan Pydantic.
-- `services/` : Menyimpan logika inti (*business logic*), seperti `ml_service.py` untuk pemrosesan audio (MFCC) dan inferensi CNN.
+- `services/` : Menyimpan logika inti (*business logic*), seperti `ml_service.py` untuk pemrosesan audio (MFCC) & inferensi CNN, serta `email_service.py` untuk pengiriman email.
 - `model/` : Direktori untuk menampung bobot model `.keras` dan status normalisasi.
 - `uploads/audio/` : Menyimpan file audio rekaman pengguna yang masuk.
 - `main.py` : Berfungsi secara eksklusif sebagai *entrypoint* aplikasi dan memuat router.
