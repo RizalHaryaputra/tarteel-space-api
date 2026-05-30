@@ -5,9 +5,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 try:
-    import tflite_runtime.interpreter as tflite
+    from ai_edge_litert.interpreter import Interpreter
 except ImportError:
-    from tensorflow import lite as tflite
+    try:
+        from tflite_runtime.interpreter import Interpreter
+    except ImportError:
+        import tensorflow.lite as tflite
+        Interpreter = tflite.Interpreter
 
 from core.config import (
     MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, UPLOAD_DIR, SESSION_SECRET_KEY, FRONTEND_URL
@@ -20,7 +24,7 @@ async def lifespan(app: FastAPI):
     print("🚀 [Startup] Memuat model TFLite...")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-    interpreter = tflite.Interpreter(model_path=str(MODEL_PATH))
+    interpreter = Interpreter(model_path=str(MODEL_PATH))
     interpreter.allocate_tensors()
     ml_state["interpreter"] = interpreter
     ml_state["input_details"] = interpreter.get_input_details()

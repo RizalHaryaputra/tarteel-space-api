@@ -1,0 +1,29 @@
+# Abaikan virtual environment lokal
+venv/
+.venv/
+env/
+
+# Abaikan git
+.git/
+.gitignore
+
+# Abaikan cache Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Abaikan file lokal / rahasia
+.env
+.env.example
+*.sql
+db_tarteel_space.sql
+schema.sql
+
+# Abaikan folder upload / audio lokal
+uploads/
+audio/
+
+# Abaikan log file
+*.log
+typecheck.log
