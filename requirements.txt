@@ -3,11 +3,12 @@ uvicorn[standard]==0.29.0
 python-multipart==0.0.9
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==3.2.0
 pydantic[email]==2.7.1
 mysql-connector-python==8.4.0
 librosa==0.10.2
 numpy==1.26.4
-tensorflow==2.16.1
+ai-edge-litert
 av>=12.0.0
 python-dotenv==1.0.1
 authlib==1.3.0

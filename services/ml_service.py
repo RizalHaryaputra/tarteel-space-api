@@ -125,12 +125,18 @@ def softmax_with_temperature(logits: np.ndarray, temperature: float) -> np.ndarr
 
 
 def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple[str, float, list, float]:
-    model = ml_state["model"]
+    interpreter = ml_state["interpreter"]
+    input_details = ml_state["input_details"]
+    output_details = ml_state["output_details"]
     idx2label = ml_state["idx2label"]
     label2idx = ml_state.get("label2idx", {})
 
     input_data = np.expand_dims(mfcc_feature, axis=0)
-    raw_output = model.predict(input_data, verbose=0)[0]
+    
+    # Run TFLite inference
+    interpreter.set_tensor(input_details[0]['index'], input_data)
+    interpreter.invoke()
+    raw_output = interpreter.get_tensor(output_details[0]['index'])[0]
 
     if abs(raw_output.sum() - 1.0) < 0.01:
         logit_proxy = np.log(np.clip(raw_output, 1e-9, 1.0))
