@@ -1,6 +1,6 @@
 # Tarteel Space API 🚀
 
-Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan huruf hijaiyah berbasis Artificial Intelligence (AI). Dibangun menggunakan **FastAPI**, **TensorFlow/Keras**, dan **MySQL**.
+Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan huruf hijaiyah berbasis Artificial Intelligence (AI). Dibangun menggunakan **FastAPI**, **LiteRT (TensorFlow Lite)**, dan **MySQL**.
 
 ## ✨ Fitur Utama
 - **Autentikasi Pengguna**: Registrasi, Login, dan manajemen token JWT yang aman.
@@ -12,9 +12,9 @@ Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan hur
 
 ## 🛠️ Teknologi yang Digunakan
 - **Framework Web**: FastAPI (Uvicorn)
-- **Machine Learning**: TensorFlow (Keras), Librosa, Numpy
-- **Database**: MySQL (MySQL Connector Python + Pooling)
-- **Keamanan & Autentikasi**: Passlib (Bcrypt), python-jose (JWT), Authlib (OAuth 2.0)
+- **Machine Learning**: LiteRT (ai-edge-litert), TensorFlow (lokal fallback), Librosa, Numpy
+- **Database**: MySQL (MySQL Connector Python + Pooling, mendukung SSL & Custom Port)
+- **Keamanan & Autentikasi**: Passlib (Bcrypt - pinned ke versi 3.2.0), python-jose (JWT), Authlib (OAuth 2.0)
 - **Email & Utilitas**: smtplib, httpx, python-dotenv
 
 ## 📋 Persyaratan Sistem
@@ -70,24 +70,60 @@ pip install -r requirements.txt
    ```
 
 ### 4. Setup Database MySQL
-1. Pastikan server MySQL lokal Anda sedang berjalan.
+1. Pastikan server MySQL lokal Anda sedang berjalan atau siapkan database managed di cloud (seperti Aiven.io).
 2. Buat database baru bernama `db_tarteel_space` (sesuai `DB_DATABASE` di `.env`).
-3. Import skema tabel `.sql` (berisi struktur tabel `users`, `hijaiyah_letters`, `evaluations`, `sessions`) ke dalam database tersebut.
+3. Import skema tabel `db_tarteel_space.sql` ke dalam database tersebut. File SQL ini sudah disesuaikan agar kompatibel dengan MySQL 8.0+ / Aiven (memiliki tanda kurung pada default `(UUID())` dan melewati batasan aturan primary key secara otomatis selama proses impor).
 
 ### 5. Konfigurasi Model AI
 Pastikan file pendukung model sudah berada pada folder `model/` (bisa diatur via `.env`):
-- `hijaiyah_model_final.keras` (Model Utama Keras)
+- `hijaiyah_model.tflite` (Model Utama TFLite)
 - `label_mapping.json` (Pemetaan label indeks kelas)
 - `norm_mean.npy` & `norm_std.npy` (Data statistik normalisasi Z-score)
 
-### 6. Jalankan Server
-Gunakan Uvicorn untuk menjalankan server secara lokal:
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-Server akan berjalan di: `http://localhost:8000`
+### 6. Jalankan Server Secara Lokal
+Untuk menjalankan server secara lokal (Windows) menggunakan virtual environment:
+1. Pastikan variabel di `.env` lokal Anda mengarah ke `DB_SSL_DISABLED=True` (jika MySQL lokal Anda tidak menggunakan SSL).
+2. Aktifkan mode UTF-8 pada terminal Windows Anda agar emoji tidak memicu error *Unicode*:
+   ```bash
+   $env:PYTHONUTF8=1 # Di PowerShell
+   ```
+3. Jalankan server menggunakan Uvicorn:
+   ```bash
+   venv\Scripts\python.exe -m uvicorn main:app --reload
+   ```
+Server akan berjalan di: `http://localhost:8000` dan Dokumentasi API interaktif di: **http://localhost:8000/docs**
 
-Anda dapat melihat Dokumentasi API interaktif secara otomatis di: **http://localhost:8000/docs**
+---
+
+## 🐳 Kontainerisasi & Deployment (Docker & Cloud)
+
+Proyek ini sudah dilengkapi dengan konfigurasi Docker siap pakai untuk deployment di platform cloud berbasis container (seperti **Railway.app** atau **Render.com**):
+
+### 1. Build Docker Image Secara Lokal
+Untuk melakukan build image secara lokal:
+```bash
+docker build -t tarteel-space-api .
+```
+*(Ukuran build context sangat ringan (~11 MB) karena dilindungi oleh file `.dockerignore`)*
+
+### 2. Jalankan Container Secara Lokal
+Pastikan `.env` telah disesuaikan (masukkan kredensial database Aiven Anda jika ingin mengetes koneksi cloud, dan pastikan `DB_SSL_DISABLED=False`):
+```bash
+docker run -p 8000:8000 --env-file .env tarteel-space-api
+```
+*(Catatan: Jika port 8000 dialokasikan untuk proses lain, Anda dapat memetakannya ke port lain, misal `-p 8001:8000`)*
+
+### 3. Variabel Lingkungan di Cloud (Railway/Render)
+Saat mendeploy di cloud, pastikan untuk menyetel environment variables berikut pada dashboard Anda:
+* `DB_HOST` = `<host_database_aiven_atau_lain>`
+* `DB_PORT` = `<port_database_aiven>`
+* `DB_USER` = `<username_database>`
+* `DB_PASSWORD` = `<password_database>`
+* `DB_DATABASE` = `<nama_database>`
+* `DB_SSL_DISABLED` = `False`
+* `FRONTEND_URL` = `https://<nama-app-anda>.vercel.app` (URL frontend Vercel Anda)
+* `SECRET_KEY` = `<token_acak>`
+* `SESSION_SECRET_KEY` = `<token_acak_lain>`
 
 ## 📂 Struktur Direktori Utama
 Proyek ini mengadopsi arsitektur modular standar FastAPI untuk kemudahan pemeliharaan:
