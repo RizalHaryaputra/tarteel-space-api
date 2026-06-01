@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 class HistoryItem(BaseModel):
     id: str
@@ -9,6 +9,8 @@ class HistoryItem(BaseModel):
     accuracy_score: float
     is_correct: bool
     created_at: str
+    tajweed_grade: Optional[str] = None
+    top3_predictions: Optional[List[Dict[str, Any]]] = None
 
 class DashboardStats(BaseModel):
     total_latihan: int

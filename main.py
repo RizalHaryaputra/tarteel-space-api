@@ -21,7 +21,7 @@ from api.routers import auth, letters, evaluate, sessions, history, oauth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 [Startup] Memuat model TFLite...")
+    print("[Startup] Memuat model TFLite...")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     interpreter = Interpreter(model_path=str(MODEL_PATH))
@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     ml_state["norm_mean"] = float(np.load(NORM_MEAN_PATH)[0])
     ml_state["norm_std"] = float(np.load(NORM_STD_PATH)[0])
 
-    print("🔥 [Startup] Melakukan warm-up model dan seluruh pipeline audio...")
+    print("[Startup] Melakukan warm-up model dan seluruh pipeline audio...")
     try:
         import io
         import soundfile as sf
@@ -58,15 +58,15 @@ async def lifespan(app: FastAPI):
         
         # 3. Jalankan inferensi (TensorFlow graph)
         run_inference(dummy_mfcc)
-        print("✅ [Startup] Warm-up selesai secara menyeluruh!")
+        print("[Startup] Warm-up selesai secara menyeluruh!")
     except Exception as e:
-        print(f"⚠️ [Startup] Peringatan: Warm-up gagal ({e})")
+        print(f"[Startup] Peringatan: Warm-up gagal ({e})")
 
-    print(f"✅ [Startup] Model siap! Total kelas: {len(ml_state['idx2label'])}")
+    print(f"[Startup] Model siap! Total kelas: {len(ml_state['idx2label'])}")
 
     yield
 
-    print("🛑 [Shutdown] Membersihkan resource...")
+    print("[Shutdown] Membersihkan resource...")
     ml_state.clear()
 
 

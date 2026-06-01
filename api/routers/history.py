@@ -1,3 +1,4 @@
+import json
 from typing import List
 from fastapi import APIRouter, Depends
 from api.deps import get_db, get_current_user
@@ -17,7 +18,8 @@ def get_history(
         """
         SELECT e.id, h.base_letter, h.harakat, h.arabic_script,
                e.accuracy_score, e.is_correct,
-               CAST(e.created_at AS CHAR) AS created_at
+               CAST(e.created_at AS CHAR) AS created_at,
+               e.top3_predictions, e.tajweed_grade
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
@@ -26,7 +28,16 @@ def get_history(
         """,
         (current_user["id"], limit, offset)
     )
-    return cursor.fetchall()
+    results = cursor.fetchall()
+    for row in results:
+        if row.get("top3_predictions"):
+            try:
+                row["top3_predictions"] = json.loads(row["top3_predictions"])
+            except Exception:
+                row["top3_predictions"] = []
+        else:
+            row["top3_predictions"] = []
+    return results
 
 @router.get("/weekly")
 def get_weekly_scores(current_user: dict = Depends(get_current_user), db=Depends(get_db)):

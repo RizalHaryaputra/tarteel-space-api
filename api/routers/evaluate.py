@@ -1,14 +1,25 @@
 import uuid
 import time
+import json
 from typing import Optional
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
 
 from api.deps import get_db, get_current_user
-from core.config import THRESHOLD, UPLOAD_DIR
+from core.config import THRESHOLD, UPLOAD_DIR, GEMINI_API_KEY
 from schemas.evaluation import EvaluationResult
 from services.ml_service import preprocess_and_extract_mfcc, run_inference
 
 router = APIRouter(prefix="/evaluate", tags=["Evaluasi Pelafalan"])
+
+def get_tajweed_grade(score: float) -> str:
+    if score >= 90:
+        return "Mumtaz (Istimewa)"
+    elif score >= 75:
+        return "Jayyid Jiddan (Sangat Baik)"
+    elif score >= 60:
+        return "Jayyid (Baik)"
+    else:
+        return "Dhaif (Kurang)"
 
 @router.post("/{letter_id}", response_model=EvaluationResult)
 async def evaluate_pronunciation(
@@ -55,14 +66,17 @@ async def evaluate_pronunciation(
         audio_path = str(audio_path_obj)
 
     eval_id = str(uuid.uuid4())
+    tajweed_grade = get_tajweed_grade(accuracy_score)
+    top3_json = json.dumps(top3)
+
     cursor.execute(
         """
         INSERT INTO evaluations
-            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, is_correct)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, is_correct, top3_predictions, tajweed_grade)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (eval_id, current_user["id"], session_id, letter_id,
-         audio_path, accuracy_score, top_label, int(is_correct))
+         audio_path, accuracy_score, top_label, int(is_correct), top3_json, tajweed_grade)
     )
     db.commit()
 
@@ -78,6 +92,7 @@ async def evaluate_pronunciation(
     print(f"[Evaluate] {letter['base_letter']} dievaluasi dalam {elapsed_time:.3f} detik")
 
     return EvaluationResult(
+        id=eval_id,
         letter_id=letter_id,
         base_letter=letter["base_letter"],
         harakat=letter["harakat"],
@@ -87,4 +102,71 @@ async def evaluate_pronunciation(
         is_correct=is_correct,
         status_label=status_label,
         feedback=feedback,
+        tajweed_grade=tajweed_grade,
+        top3_predictions=top3,
     )
+
+@router.get("/{eval_id}/explain")
+async def explain_pronunciation(
+    eval_id: str,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    if not GEMINI_API_KEY:
+        raise HTTPException(500, "Kunci API Gemini (GEMINI_API_KEY) belum dikonfigurasi di server")
+
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT e.accuracy_score, e.top_prediction, e.top3_predictions, e.is_correct,
+               h.base_letter, h.harakat, h.arabic_script, h.pronunciation, e.user_id
+        FROM evaluations e
+        JOIN hijaiyah_letters h ON e.letter_id = h.id
+        WHERE e.id = %s
+        """,
+        (eval_id,)
+    )
+    eval_data = cursor.fetchone()
+    if not eval_data:
+        raise HTTPException(404, "Hasil evaluasi tidak ditemukan")
+
+    if eval_data["user_id"] != current_user["id"]:
+        raise HTTPException(403, "Anda tidak memiliki akses ke evaluasi ini")
+
+    # Parse top3_predictions
+    top3_raw = eval_data["top3_predictions"]
+    top3_list = []
+    if top3_raw:
+        try:
+            top3_list = json.loads(top3_raw)
+        except Exception:
+            pass
+
+    # Format top3 list for prompt
+    top3_formatted = ", ".join([f"'{item['label']}' ({item['score']:.1f}%)" for item in top3_list]) if top3_list else "-"
+
+    # Prompt construction
+    prompt = (
+        "Anda adalah seorang Ustadz ahli Tajwid dan Makharijul Huruf. Seorang murid sedang belajar melafalkan huruf Hijaiyah berikut:\n"
+        f"- Target Huruf: {eval_data['base_letter']} ({eval_data['arabic_script']} - {eval_data['harakat']}) yang seharusnya dilafalkan sebagai '{eval_data['pronunciation']}'.\n"
+        "- Hasil Evaluasi Model AI CNN:\n"
+        f"  * Skor Akurasi Target Huruf: {float(eval_data['accuracy_score'])}%\n"
+        f"  * Prediksi Teratas AI: '{eval_data['top_prediction']}'\n"
+        f"  * 3 Alternatif Tebakan Terdekat AI: {top3_formatted}\n\n"
+        "Berdasarkan data di atas, tolong berikan analisis makhraj dan sifat huruf yang kemungkinan terjadi kesalahan jika pelafalan murid tersebut kurang tepat, "
+        "atau berikan pujian yang hangat dan tips mempertahankan pelafalan jika pelafalan murid sudah tepat.\n"
+        "Susun penjelasan Anda secara singkat, jelas, ramah, dan memotivasi menggunakan bahasa Indonesia yang baik, dengan format:\n"
+        "1. Analisis Kesalahan / Keunggulan Pelafalan (bandingkan letak makhraj huruf target dengan huruf tebakan terdekat jika salah)\n"
+        "2. Tips Praktis Latihan untuk murid."
+    )
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        explanation_text = response.text.strip()
+    except Exception as e:
+        raise HTTPException(500, f"Gagal mendapatkan penjelasan dari Gemini: {str(e)}")
+
+    return {"explanation": explanation_text}
