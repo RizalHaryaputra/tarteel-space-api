@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class EvaluationResult(BaseModel):
     id: str
@@ -14,3 +14,4 @@ class EvaluationResult(BaseModel):
     feedback: str        # pesan umpan balik
     tajweed_grade: str
     top3_predictions: List[Dict[str, Any]]
+    top5_predictions: Optional[List[Dict[str, Any]]] = None

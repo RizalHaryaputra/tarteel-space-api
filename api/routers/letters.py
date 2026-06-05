@@ -10,7 +10,7 @@ def get_all_letters(db=Depends(get_db)):
     """Ambil semua 84 huruf untuk ditampilkan di halaman latihan."""
     cursor = db.cursor(dictionary=True)
     cursor.execute(
-        "SELECT id, base_letter, harakat, pronunciation, arabic_script "
+        "SELECT id, base_letter, harakat, pronunciation, arabic_script, model_label, audio_url "
         "FROM hijaiyah_letters ORDER BY id"
     )
     return cursor.fetchall()

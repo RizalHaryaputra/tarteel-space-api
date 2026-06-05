@@ -134,5 +134,5 @@ async def oauth_callback(provider: str, request: Request, db=Depends(get_db)):
     )
 
     # Arahkan kembali ke frontend (halaman callback khusus)
-    redirect_url = f"{FRONTEND_URL}/auth/callback?token={access_token}&user_id={user['id']}&user_name={user['name']}"
+    redirect_url = f"{FRONTEND_URL}/auth/callback?token={access_token}&user_id={user['id']}&user_name={user['name']}&role={user.get('role', 'user')}"
     return RedirectResponse(url=redirect_url)

@@ -8,6 +8,7 @@ from api.deps import get_db, get_current_user
 from core.config import THRESHOLD, UPLOAD_DIR, GEMINI_API_KEY
 from schemas.evaluation import EvaluationResult
 from services.ml_service import preprocess_and_extract_mfcc, run_inference
+from services.cloudinary_service import upload_audio_to_cloudinary
 
 router = APIRouter(prefix="/evaluate", tags=["Evaluasi Pelafalan"])
 
@@ -51,32 +52,38 @@ async def evaluate_pronunciation(
         raise HTTPException(422, f"Gagal memproses audio: {str(e)}")
 
     expected_label = letter["model_label"]
-    top_label, top_confidence, top3, expected_confidence = run_inference(mfcc_feature, expected_label)
+    top_label, top_confidence, top3, expected_confidence, top5 = run_inference(mfcc_feature, expected_label)
 
     is_correct = (top_label == expected_label) and (top_confidence >= THRESHOLD)
     accuracy_score = round(expected_confidence, 2)
 
-    save_audio = True
+    # Cloudinary upload fallback to local storage
     audio_path = None
-    if save_audio:
+    audio_filename = f"{current_user['id']}_{letter_id}_{uuid.uuid4().hex[:8]}.wav"
+    try:
+        audio_path = upload_audio_to_cloudinary(audio_bytes, audio_filename, folder="evaluations")
+        print(f"[Cloudinary] Audio berhasil diunggah ke cloud: {audio_path}")
+    except ValueError:
+        # Fallback local file storage
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        audio_filename = f"{current_user['id']}_{letter_id}_{uuid.uuid4().hex[:8]}.wav"
         audio_path_obj = UPLOAD_DIR / audio_filename
         audio_path_obj.write_bytes(audio_bytes)
         audio_path = str(audio_path_obj)
+        print(f"[Local Storage] Cloudinary belum diset, menyimpan secara lokal di: {audio_path}")
 
     eval_id = str(uuid.uuid4())
     tajweed_grade = get_tajweed_grade(accuracy_score)
     top3_json = json.dumps(top3)
+    top5_json = json.dumps(top5)
 
     cursor.execute(
         """
         INSERT INTO evaluations
-            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, is_correct, top3_predictions, tajweed_grade)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, is_correct, top3_predictions, tajweed_grade, top5_predictions)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (eval_id, current_user["id"], session_id, letter_id,
-         audio_path, accuracy_score, top_label, int(is_correct), top3_json, tajweed_grade)
+         audio_path, accuracy_score, top_label, int(is_correct), top3_json, tajweed_grade, top5_json)
     )
     db.commit()
 
@@ -104,6 +111,7 @@ async def evaluate_pronunciation(
         feedback=feedback,
         tajweed_grade=tajweed_grade,
         top3_predictions=top3,
+        top5_predictions=top5,
     )
 
 @router.get("/{eval_id}/explain")
