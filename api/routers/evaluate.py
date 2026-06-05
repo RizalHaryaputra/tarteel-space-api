@@ -163,7 +163,7 @@ async def explain_pronunciation(
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-3.1-flash-lite")
         response = model.generate_content(prompt)
         explanation_text = response.text.strip()
     except Exception as e:
