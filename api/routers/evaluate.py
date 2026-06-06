@@ -2,9 +2,10 @@ import uuid
 import time
 import json
 from typing import Optional
-from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
+from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, BackgroundTasks
 
 from api.deps import get_db, get_current_user
+from db.database import get_db_connection
 from core.config import THRESHOLD, UPLOAD_DIR, GEMINI_API_KEY
 from schemas.evaluation import EvaluationResult
 from services.ml_service import preprocess_and_extract_mfcc, run_inference
@@ -22,9 +23,44 @@ def get_tajweed_grade(score: float) -> str:
     else:
         return "Dhaif (Kurang)"
 
+def upload_audio_background_task(eval_id: str, audio_bytes: bytes, audio_filename: str):
+    """Background task to upload audio to Cloudinary and update the database."""
+    try:
+        audio_path = upload_audio_to_cloudinary(audio_bytes, audio_filename, folder="evaluations")
+        print(f"[Cloudinary-BG] Audio berhasil diunggah ke cloud: {audio_path}")
+        
+        # Update database with the Cloudinary URL
+        db = get_db_connection()
+        try:
+            cursor = db.cursor()
+            cursor.execute("UPDATE evaluations SET audio_path = %s WHERE id = %s", (audio_path, eval_id))
+            db.commit()
+            cursor.close()
+        finally:
+            db.close()
+            
+    except Exception as e:
+        # Fallback local file storage if Cloudinary fails
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        audio_path_obj = UPLOAD_DIR / audio_filename
+        audio_path_obj.write_bytes(audio_bytes)
+        audio_path = str(audio_path_obj)
+        print(f"[Local Storage-BG] Cloudinary gagal/belum diset ({e}), menyimpan secara lokal di: {audio_path}")
+        
+        # Update database with the local path
+        db = get_db_connection()
+        try:
+            cursor = db.cursor()
+            cursor.execute("UPDATE evaluations SET audio_path = %s WHERE id = %s", (audio_path, eval_id))
+            db.commit()
+            cursor.close()
+        finally:
+            db.close()
+
 @router.post("/{letter_id}", response_model=EvaluationResult)
 async def evaluate_pronunciation(
     letter_id: int,
+    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     session_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
@@ -56,25 +92,13 @@ async def evaluate_pronunciation(
 
     is_correct = (top_label == expected_label) and (top_confidence >= THRESHOLD)
     accuracy_score = round(expected_confidence, 2)
-
-    # Cloudinary upload fallback to local storage
-    audio_path = None
-    audio_filename = f"{current_user['id']}_{letter_id}_{uuid.uuid4().hex[:8]}.wav"
-    try:
-        audio_path = upload_audio_to_cloudinary(audio_bytes, audio_filename, folder="evaluations")
-        print(f"[Cloudinary] Audio berhasil diunggah ke cloud: {audio_path}")
-    except ValueError:
-        # Fallback local file storage
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        audio_path_obj = UPLOAD_DIR / audio_filename
-        audio_path_obj.write_bytes(audio_bytes)
-        audio_path = str(audio_path_obj)
-        print(f"[Local Storage] Cloudinary belum diset, menyimpan secara lokal di: {audio_path}")
-
-    eval_id = str(uuid.uuid4())
     tajweed_grade = get_tajweed_grade(accuracy_score)
     top3_json = json.dumps(top3)
     top5_json = json.dumps(top5)
+    
+    eval_id = str(uuid.uuid4())
+    audio_filename = f"{current_user['id']}_{letter_id}_{eval_id[:8]}.wav"
+    initial_audio_path = "uploading..."
 
     cursor.execute(
         """
@@ -83,9 +107,12 @@ async def evaluate_pronunciation(
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (eval_id, current_user["id"], session_id, letter_id,
-         audio_path, accuracy_score, top_label, int(is_correct), top3_json, tajweed_grade, top5_json)
+         initial_audio_path, accuracy_score, top_label, int(is_correct), top3_json, tajweed_grade, top5_json)
     )
     db.commit()
+
+    # Schedule the upload to happen in the background
+    background_tasks.add_task(upload_audio_background_task, eval_id, audio_bytes, audio_filename)
 
     status_label = "Tepat ✓" if is_correct else "Kurang Tepat ✗"
     if is_correct:
