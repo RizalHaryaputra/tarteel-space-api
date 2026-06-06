@@ -153,7 +153,7 @@ async def explain_pronunciation(
     cursor = db.cursor(dictionary=True)
     cursor.execute(
         """
-        SELECT e.accuracy_score, e.top_prediction, e.top3_predictions, e.is_correct,
+        SELECT e.accuracy_score, e.top_prediction, e.top3_predictions, e.is_correct, e.ai_explanation,
                h.base_letter, h.harakat, h.arabic_script, h.pronunciation, e.user_id
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id
@@ -167,6 +167,10 @@ async def explain_pronunciation(
 
     if eval_data["user_id"] != current_user["id"]:
         raise HTTPException(403, "Anda tidak memiliki akses ke evaluasi ini")
+
+    # 1. Jika penjelasan AI sudah ada di database, langsung kembalikan (Lazy Loading)
+    if eval_data["ai_explanation"]:
+        return {"explanation": eval_data["ai_explanation"]}
 
     # Parse top3_predictions
     top3_raw = eval_data["top3_predictions"]
@@ -187,12 +191,11 @@ async def explain_pronunciation(
         "- Hasil Evaluasi Model AI CNN:\n"
         f"  * Skor Akurasi Target Huruf: {float(eval_data['accuracy_score'])}%\n"
         f"  * Prediksi Teratas AI: '{eval_data['top_prediction']}'\n"
-        f"  * 3 Alternatif Tebakan Terdekat AI: {top3_formatted}\n\n"
-        "Berdasarkan data di atas, tolong berikan analisis makhraj dan sifat huruf yang kemungkinan terjadi kesalahan jika pelafalan murid tersebut kurang tepat, "
-        "atau berikan pujian yang hangat dan tips mempertahankan pelafalan jika pelafalan murid sudah tepat.\n"
-        "Susun penjelasan Anda secara singkat, jelas, ramah, dan memotivasi menggunakan bahasa Indonesia yang baik, dengan format:\n"
-        "1. Analisis Kesalahan / Keunggulan Pelafalan (bandingkan letak makhraj huruf target dengan huruf tebakan terdekat jika salah)\n"
-        "2. Tips Praktis Latihan untuk murid."
+        f"  * Alternatif Tebakan Terdekat AI: {top3_formatted}\n\n"
+        "PENTING: \n"
+        "1. Berikan analisis makhraj yang langsung pada intinya, sangat singkat, padat, dan tanpa basa-basi.\n"
+        "2. Sertakan satu tips praktis cara memperbaikinya.\n"
+        "3. JANGAN menggunakan format markdown sama sekali (seperti tanda *, #, bold, dll). Gunakan teks biasa saja agar mudah dibaca.\n"
     )
 
     try:
@@ -203,5 +206,9 @@ async def explain_pronunciation(
         explanation_text = response.text.strip()
     except Exception as e:
         raise HTTPException(500, f"Gagal mendapatkan penjelasan dari Gemini: {str(e)}")
+
+    # 2. Simpan penjelasan yang baru di-generate ke database
+    cursor.execute("UPDATE evaluations SET ai_explanation = %s WHERE id = %s", (explanation_text, eval_id))
+    db.commit()
 
     return {"explanation": explanation_text}
