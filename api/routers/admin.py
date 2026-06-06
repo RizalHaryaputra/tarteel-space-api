@@ -34,12 +34,41 @@ def get_admin_stats(db=Depends(get_db)):
     cursor.execute("SELECT COUNT(*) AS total FROM dataset_pool")
     total_dataset_pool = cursor.fetchone()["total"] or 0
     
+    from datetime import datetime, timedelta
+    
+    # 5. Daily Trend (Last 7 Days)
+    cursor.execute("""
+        SELECT DATE_FORMAT(created_at, '%Y-%m-%d') as date, COUNT(*) as count 
+        FROM evaluations 
+        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        GROUP BY DATE(created_at)
+    """)
+    trend_rows = cursor.fetchall()
+    trend_dict = {row["date"]: row["count"] for row in trend_rows}
+    
+    daily_trend = []
+    today = datetime.now()
+    # Ensure days are ordered from 6 days ago to today
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        date_str = d.strftime('%Y-%m-%d')
+        # Map weekday to Indonesian short string
+        day_names = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]
+        day_str = day_names[d.weekday()]
+        
+        daily_trend.append({
+            "date": date_str,
+            "day": day_str,
+            "count": trend_dict.get(date_str, 0)
+        })
+    
     return {
         "total_users": total_users,
         "total_evaluations": total_evaluations,
         "average_accuracy": float(average_accuracy),
         "total_feedbacks": total_feedbacks,
-        "total_dataset_pool": total_dataset_pool
+        "total_dataset_pool": total_dataset_pool,
+        "daily_trend": daily_trend
     }
 
 

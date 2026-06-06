@@ -9,6 +9,9 @@ Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan hur
 - **Evaluasi Pelafalan (AI)**: Mengekstrak fitur audio (MFCC) dengan Librosa dan memprediksi keakuratan pelafalan menggunakan model Convolutional Neural Network (CNN).
 - **Manajemen Sesi & Riwayat**: Mencatat setiap sesi latihan dan skor evaluasi.
 - **Dashboard Statistik**: Memberikan ringkasan performa harian pengguna, streak latihan, dan menganalisis huruf terlemah/terkuat.
+- **Panel Kontrol Admin**: Menyediakan endpoint statistik menyeluruh, manajemen daftar pengguna, dan manajemen huruf hijaiyah.
+- **Active Learning Loop**: Mendukung fitur pelaporan (feedback) dari pengguna atas prediksi yang salah, dan mengizinkan admin untuk memvalidasi rekaman sebagai *ground truth* baru.
+- **Dataset Pool & Ekspor**: Mengagregasi data rekaman audio yang tervalidasi untuk keperluan *retraining* model AI, serta dapat diekspor langsung ke format CSV atau JSON.
 
 ## 🛠️ Teknologi yang Digunakan
 - **Framework Web**: FastAPI (Uvicorn)
