@@ -231,7 +231,7 @@ def get_user_feedbacks(limit: int = 50, offset: int = 0, db=Depends(get_db)):
         """
         SELECT f.id AS feedback_id, f.comment, CAST(f.created_at AS CHAR) AS created_at,
                u.name AS user_name, u.email AS user_email,
-               e.id AS evaluation_id, e.accuracy_score, e.top_prediction, e.top5_predictions, e.is_correct, e.audio_path AS audio_url,
+               e.id AS evaluation_id, e.accuracy_score, e.top_prediction, e.top5_predictions, e.is_correct, e.audio_path AS audio_url, e.is_verified,
                h.base_letter, h.harakat, h.arabic_script, h.pronunciation
         FROM user_feedbacks f
         JOIN users u ON f.user_id = u.id
