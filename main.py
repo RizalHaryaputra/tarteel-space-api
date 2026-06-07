@@ -17,7 +17,7 @@ from core.config import (
     MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, UPLOAD_DIR, SESSION_SECRET_KEY, FRONTEND_URL
 )
 from services.ml_service import ml_state
-from api.routers import auth, letters, evaluate, sessions, history, oauth, feedback, admin
+from api.routers import auth, letters, evaluate, sessions, history, oauth, feedback, admin, profile
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -94,6 +94,7 @@ app.include_router(sessions.router)
 app.include_router(history.router)
 app.include_router(feedback.router)
 app.include_router(admin.router)
+app.include_router(profile.router)
 
 @app.get("/")
 def root():

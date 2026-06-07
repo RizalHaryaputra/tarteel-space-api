@@ -30,3 +30,33 @@ def upload_audio_to_cloudinary(audio_bytes: bytes, filename: str, folder: str = 
         return response.get("secure_url")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gagal mengunggah audio ke Cloudinary: {str(e)}")
+
+def upload_image_to_cloudinary(image_bytes: bytes, filename: str, folder: str = "tarteel_space_avatars") -> str:
+    """
+    Mengunggah raw image bytes ke Cloudinary dan mengembalikan secure URL (https).
+    """
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+    if not cloud_name:
+        raise ValueError("Cloudinary belum dikonfigurasi di server (.env)")
+
+    try:
+        response = cloudinary.uploader.upload(
+            image_bytes,
+            resource_type="image",
+            public_id=filename,
+            folder=folder,
+            overwrite=True
+        )
+        return response.get("secure_url")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal mengunggah gambar ke Cloudinary: {str(e)}")
+
+def delete_image_from_cloudinary(public_id: str) -> bool:
+    """
+    Menghapus gambar dari Cloudinary berdasarkan public_id.
+    """
+    try:
+        cloudinary.uploader.destroy(public_id, resource_type="image")
+        return True
+    except Exception:
+        return False

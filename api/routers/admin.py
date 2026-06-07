@@ -81,7 +81,7 @@ def get_all_users(limit: int = 50, offset: int = 0, db=Depends(get_db)):
     cursor = db.cursor(dictionary=True)
     cursor.execute(
         """
-        SELECT u.id, u.name, u.email, u.role, CAST(u.created_at AS CHAR) AS created_at,
+        SELECT u.id, u.name, u.email, u.role, u.avatar_url, CAST(u.created_at AS CHAR) AS created_at,
                COUNT(e.id) AS total_evaluations,
                ROUND(AVG(e.accuracy_score), 2) AS average_accuracy
         FROM users u
