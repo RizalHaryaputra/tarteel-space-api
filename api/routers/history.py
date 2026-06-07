@@ -19,7 +19,8 @@ def get_history(
         SELECT e.id, h.base_letter, h.harakat, h.arabic_script,
                e.accuracy_score, e.is_correct,
                CAST(e.created_at AS CHAR) AS created_at,
-               e.top3_predictions, e.tajweed_grade, e.ai_explanation
+               e.top3_predictions, e.tajweed_grade, e.ai_explanation,
+               e.audio_path AS user_audio, h.audio_url AS ustadz_audio
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
@@ -71,24 +72,22 @@ def get_dashboard(current_user: dict = Depends(get_current_user), db=Depends(get
 
     cursor.execute(
         """
-        SELECT h.base_letter, ROUND(AVG(e.accuracy_score),2) AS avg_score
+        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score
         FROM evaluations e JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
-        GROUP BY h.base_letter
-        HAVING COUNT(*) >= 3
-        ORDER BY avg_score ASC LIMIT 1
+        GROUP BY h.base_letter, h.arabic_script
+        ORDER BY COUNT(*) >= 3 DESC, avg_score ASC LIMIT 1
         """, (uid,)
     )
     lemah = cursor.fetchone()
 
     cursor.execute(
         """
-        SELECT h.base_letter, ROUND(AVG(e.accuracy_score),2) AS avg_score
+        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score
         FROM evaluations e JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
-        GROUP BY h.base_letter
-        HAVING COUNT(*) >= 3
-        ORDER BY avg_score DESC LIMIT 1
+        GROUP BY h.base_letter, h.arabic_script
+        ORDER BY COUNT(*) >= 3 DESC, avg_score DESC LIMIT 1
         """, (uid,)
     )
     kuat = cursor.fetchone()
@@ -106,6 +105,6 @@ def get_dashboard(current_user: dict = Depends(get_current_user), db=Depends(get
         total_latihan=stats["total"] or 0,
         rata_rata_akurasi=stats["avg_score"] or 0.0,
         streak_hari=streak_row["streak"] or 0,
-        huruf_terlemah=lemah["base_letter"] if lemah else None,
-        huruf_terkuat=kuat["base_letter"] if kuat else None,
+        huruf_terlemah=lemah["arabic_script"] if lemah else None,
+        huruf_terkuat=kuat["arabic_script"] if kuat else None,
     )
