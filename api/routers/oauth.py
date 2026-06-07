@@ -80,17 +80,20 @@ async def oauth_callback(provider: str, request: Request, db=Depends(get_db)):
 
     # Ambil data user dari provider
     user_info = None
+    avatar_url = None
     if provider == 'google':
         user_info = token.get('userinfo')
         if not user_info:
             user_info = await client.parse_id_token(request, token)
         email = user_info.get('email')
         name = user_info.get('name')
+        avatar_url = user_info.get('picture')
         
     elif provider == 'github':
         resp = await client.get('user', token=token)
         profile = resp.json()
         name = profile.get('name') or profile.get('login')
+        avatar_url = profile.get('avatar_url')
         
         # GitHub tidak selalu mengembalikan email di profile utama
         email = profile.get('email')
@@ -117,15 +120,21 @@ async def oauth_callback(provider: str, request: Request, db=Depends(get_db)):
         # Jika belum ada, buat user baru
         user_id = str(uuid.uuid4())
         cursor.execute(
-            "INSERT INTO users (id, name, email, auth_provider) VALUES (%s, %s, %s, %s)",
-            (user_id, name, email, provider)
+            "INSERT INTO users (id, name, email, auth_provider, avatar_url) VALUES (%s, %s, %s, %s, %s)",
+            (user_id, name, email, provider, avatar_url)
         )
         db.commit()
         user = {
             "id": user_id,
             "name": name,
-            "email": email
+            "email": email,
+            "avatar_url": avatar_url
         }
+    else:
+        # Update avatar jika sebelumnya kosong
+        if avatar_url and not user.get('avatar_url'):
+            cursor.execute("UPDATE users SET avatar_url = %s WHERE id = %s", (avatar_url, user['id']))
+            db.commit()
 
     # Buat JWT token untuk aplikasi Tarteel Space
     access_token = create_access_token(
@@ -134,5 +143,5 @@ async def oauth_callback(provider: str, request: Request, db=Depends(get_db)):
     )
 
     # Arahkan kembali ke frontend (halaman callback khusus)
-    redirect_url = f"{FRONTEND_URL}/auth/callback?token={access_token}&user_id={user['id']}&user_name={user['name']}"
+    redirect_url = f"{FRONTEND_URL}/auth/callback?token={access_token}&user_id={user['id']}&user_name={user['name']}&role={user.get('role', 'user')}"
     return RedirectResponse(url=redirect_url)

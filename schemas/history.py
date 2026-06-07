@@ -10,7 +10,9 @@ class HistoryItem(BaseModel):
     is_correct: bool
     created_at: str
     tajweed_grade: Optional[str] = None
+    ai_explanation: Optional[str] = None
     top3_predictions: Optional[List[Dict[str, Any]]] = None
+    top5_predictions: Optional[List[Dict[str, Any]]] = None
 
 class DashboardStats(BaseModel):
     total_latihan: int

@@ -2,12 +2,14 @@ import uuid
 import time
 import json
 from typing import Optional
-from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
+from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, BackgroundTasks
 
 from api.deps import get_db, get_current_user
+from db.database import get_db_connection
 from core.config import THRESHOLD, UPLOAD_DIR, GEMINI_API_KEY
 from schemas.evaluation import EvaluationResult
 from services.ml_service import preprocess_and_extract_mfcc, run_inference
+from services.cloudinary_service import upload_audio_to_cloudinary
 
 router = APIRouter(prefix="/evaluate", tags=["Evaluasi Pelafalan"])
 
@@ -21,9 +23,44 @@ def get_tajweed_grade(score: float) -> str:
     else:
         return "Dhaif (Kurang)"
 
+def upload_audio_background_task(eval_id: str, audio_bytes: bytes, audio_filename: str):
+    """Background task to upload audio to Cloudinary and update the database."""
+    try:
+        audio_path = upload_audio_to_cloudinary(audio_bytes, audio_filename, folder="evaluations")
+        print(f"[Cloudinary-BG] Audio berhasil diunggah ke cloud: {audio_path}")
+        
+        # Update database with the Cloudinary URL
+        db = get_db_connection()
+        try:
+            cursor = db.cursor()
+            cursor.execute("UPDATE evaluations SET audio_path = %s WHERE id = %s", (audio_path, eval_id))
+            db.commit()
+            cursor.close()
+        finally:
+            db.close()
+            
+    except Exception as e:
+        # Fallback local file storage if Cloudinary fails
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        audio_path_obj = UPLOAD_DIR / audio_filename
+        audio_path_obj.write_bytes(audio_bytes)
+        audio_path = str(audio_path_obj)
+        print(f"[Local Storage-BG] Cloudinary gagal/belum diset ({e}), menyimpan secara lokal di: {audio_path}")
+        
+        # Update database with the local path
+        db = get_db_connection()
+        try:
+            cursor = db.cursor()
+            cursor.execute("UPDATE evaluations SET audio_path = %s WHERE id = %s", (audio_path, eval_id))
+            db.commit()
+            cursor.close()
+        finally:
+            db.close()
+
 @router.post("/{letter_id}", response_model=EvaluationResult)
 async def evaluate_pronunciation(
     letter_id: int,
+    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
     session_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
@@ -51,34 +88,31 @@ async def evaluate_pronunciation(
         raise HTTPException(422, f"Gagal memproses audio: {str(e)}")
 
     expected_label = letter["model_label"]
-    top_label, top_confidence, top3, expected_confidence = run_inference(mfcc_feature, expected_label)
+    top_label, top_confidence, top3, expected_confidence, top5 = run_inference(mfcc_feature, expected_label)
 
     is_correct = (top_label == expected_label) and (top_confidence >= THRESHOLD)
     accuracy_score = round(expected_confidence, 2)
-
-    save_audio = True
-    audio_path = None
-    if save_audio:
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        audio_filename = f"{current_user['id']}_{letter_id}_{uuid.uuid4().hex[:8]}.wav"
-        audio_path_obj = UPLOAD_DIR / audio_filename
-        audio_path_obj.write_bytes(audio_bytes)
-        audio_path = str(audio_path_obj)
-
-    eval_id = str(uuid.uuid4())
     tajweed_grade = get_tajweed_grade(accuracy_score)
     top3_json = json.dumps(top3)
+    top5_json = json.dumps(top5)
+    
+    eval_id = str(uuid.uuid4())
+    audio_filename = f"{current_user['id']}_{letter_id}_{eval_id[:8]}.wav"
+    initial_audio_path = "uploading..."
 
     cursor.execute(
         """
         INSERT INTO evaluations
-            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, is_correct, top3_predictions, tajweed_grade)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, is_correct, top3_predictions, tajweed_grade, top5_predictions)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (eval_id, current_user["id"], session_id, letter_id,
-         audio_path, accuracy_score, top_label, int(is_correct), top3_json, tajweed_grade)
+         initial_audio_path, accuracy_score, top_label, int(is_correct), top3_json, tajweed_grade, top5_json)
     )
     db.commit()
+
+    # Schedule the upload to happen in the background
+    background_tasks.add_task(upload_audio_background_task, eval_id, audio_bytes, audio_filename)
 
     status_label = "Tepat ✓" if is_correct else "Kurang Tepat ✗"
     if is_correct:
@@ -104,6 +138,7 @@ async def evaluate_pronunciation(
         feedback=feedback,
         tajweed_grade=tajweed_grade,
         top3_predictions=top3,
+        top5_predictions=top5,
     )
 
 @router.get("/{eval_id}/explain")
@@ -118,7 +153,7 @@ async def explain_pronunciation(
     cursor = db.cursor(dictionary=True)
     cursor.execute(
         """
-        SELECT e.accuracy_score, e.top_prediction, e.top3_predictions, e.is_correct,
+        SELECT e.accuracy_score, e.top_prediction, e.top3_predictions, e.is_correct, e.ai_explanation,
                h.base_letter, h.harakat, h.arabic_script, h.pronunciation, e.user_id
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id
@@ -132,6 +167,10 @@ async def explain_pronunciation(
 
     if eval_data["user_id"] != current_user["id"]:
         raise HTTPException(403, "Anda tidak memiliki akses ke evaluasi ini")
+
+    # 1. Jika penjelasan AI sudah ada di database, langsung kembalikan (Lazy Loading)
+    if eval_data["ai_explanation"]:
+        return {"explanation": eval_data["ai_explanation"]}
 
     # Parse top3_predictions
     top3_raw = eval_data["top3_predictions"]
@@ -152,12 +191,11 @@ async def explain_pronunciation(
         "- Hasil Evaluasi Model AI CNN:\n"
         f"  * Skor Akurasi Target Huruf: {float(eval_data['accuracy_score'])}%\n"
         f"  * Prediksi Teratas AI: '{eval_data['top_prediction']}'\n"
-        f"  * 3 Alternatif Tebakan Terdekat AI: {top3_formatted}\n\n"
-        "Berdasarkan data di atas, tolong berikan analisis makhraj dan sifat huruf yang kemungkinan terjadi kesalahan jika pelafalan murid tersebut kurang tepat, "
-        "atau berikan pujian yang hangat dan tips mempertahankan pelafalan jika pelafalan murid sudah tepat.\n"
-        "Susun penjelasan Anda secara singkat, jelas, ramah, dan memotivasi menggunakan bahasa Indonesia yang baik, dengan format:\n"
-        "1. Analisis Kesalahan / Keunggulan Pelafalan (bandingkan letak makhraj huruf target dengan huruf tebakan terdekat jika salah)\n"
-        "2. Tips Praktis Latihan untuk murid."
+        f"  * Alternatif Tebakan Terdekat AI: {top3_formatted}\n\n"
+        "PENTING: \n"
+        "1. Berikan analisis makhraj yang langsung pada intinya, sangat singkat, padat, dan tanpa basa-basi.\n"
+        "2. Sertakan satu tips praktis cara memperbaikinya.\n"
+        "3. JANGAN menggunakan format markdown sama sekali (seperti tanda *, #, bold, dll). Gunakan teks biasa saja agar mudah dibaca.\n"
     )
 
     try:
@@ -168,5 +206,9 @@ async def explain_pronunciation(
         explanation_text = response.text.strip()
     except Exception as e:
         raise HTTPException(500, f"Gagal mendapatkan penjelasan dari Gemini: {str(e)}")
+
+    # 2. Simpan penjelasan yang baru di-generate ke database
+    cursor.execute("UPDATE evaluations SET ai_explanation = %s WHERE id = %s", (explanation_text, eval_id))
+    db.commit()
 
     return {"explanation": explanation_text}

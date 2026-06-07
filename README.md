@@ -7,13 +7,19 @@ Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan hur
 - **Single Sign-On (SSO)**: Mendukung integrasi OAuth 2.0 untuk login via Google dan GitHub.
 - **Pemulihan Akun**: Fitur lupa & reset password menggunakan token aman dan notifikasi email via SMTP.
 - **Evaluasi Pelafalan (AI)**: Mengekstrak fitur audio (MFCC) dengan Librosa dan memprediksi keakuratan pelafalan menggunakan model Convolutional Neural Network (CNN).
-- **Manajemen Sesi & Riwayat**: Mencatat setiap sesi latihan dan skor evaluasi.
+- **Penjelasan Tajwid Interaktif**: Menggunakan **Google Gemini AI** untuk memberikan analisis makhraj dan sifat huruf secara spesifik berdasarkan hasil prediksi model CNN.
+- **Manajemen Sesi & Riwayat**: Mencatat setiap sesi latihan dan skor evaluasi beserta rekaman audionya (tersimpan aman di **Cloudinary**).
 - **Dashboard Statistik**: Memberikan ringkasan performa harian pengguna, streak latihan, dan menganalisis huruf terlemah/terkuat.
+- **Panel Kontrol Admin**: Menyediakan endpoint statistik menyeluruh, manajemen daftar pengguna, dan manajemen huruf hijaiyah beserta audio referensi (Ustadz).
+- **Active Learning Loop**: Mendukung fitur pelaporan (feedback) dari pengguna atas prediksi yang salah, dan mengizinkan admin untuk memvalidasi rekaman sebagai *ground truth* baru.
+- **Dataset Pool & Ekspor**: Mengagregasi data rekaman audio yang tervalidasi untuk keperluan *retraining* model AI, serta dapat diekspor langsung ke format CSV atau JSON.
 
 ## 🛠️ Teknologi yang Digunakan
 - **Framework Web**: FastAPI (Uvicorn)
 - **Machine Learning**: LiteRT (ai-edge-litert), TensorFlow (lokal fallback), Librosa, Numpy
+- **Generative AI**: Google GenAI SDK (Gemini)
 - **Database**: MySQL (MySQL Connector Python + Pooling, mendukung SSL & Custom Port)
+- **Penyimpanan Cloud**: Cloudinary SDK (untuk penyimpanan file audio)
 - **Keamanan & Autentikasi**: Passlib (Bcrypt - pinned ke versi 3.2.0), python-jose (JWT), Authlib (OAuth 2.0)
 - **Email & Utilitas**: smtplib, httpx, python-dotenv
 
@@ -67,6 +73,14 @@ pip install -r requirements.txt
    GITHUB_CLIENT_ID=...
    GITHUB_CLIENT_SECRET=...
    SESSION_SECRET_KEY=kunci_rahasia_sesi
+
+   # Cloudinary (Penyimpanan Audio)
+   CLOUDINARY_CLOUD_NAME=...
+   CLOUDINARY_API_KEY=...
+   CLOUDINARY_API_SECRET=...
+
+   # Google Gemini AI (Penjelasan Tajwid)
+   GEMINI_API_KEY=...
    ```
 
 ### 4. Setup Database MySQL
@@ -131,10 +145,11 @@ Proyek ini mengadopsi arsitektur modular standar FastAPI untuk kemudahan pemelih
 - `core/` : Menyimpan konfigurasi global (`config.py`) yang membaca file `.env` dan utilitas keamanan (hashing, JWT).
 - `db/` : Berisi konfigurasi dan setup *connection pool* untuk MySQL.
 - `schemas/` : Mendefinisikan struktur data I/O (Request/Response) menggunakan Pydantic.
-- `services/` : Menyimpan logika inti (*business logic*), seperti `ml_service.py` untuk pemrosesan audio (MFCC) & inferensi CNN, serta `email_service.py` untuk pengiriman email.
-- `model/` : Direktori untuk menampung bobot model `.keras` dan status normalisasi.
-- `uploads/audio/` : Menyimpan file audio rekaman pengguna yang masuk.
-- `main.py` : Berfungsi secara eksklusif sebagai *entrypoint* aplikasi dan memuat router.
+- `services/` : Menyimpan logika inti (*business logic*), seperti `ml_service.py` untuk pemrosesan audio & inferensi CNN, `cloudinary_service.py` untuk manajemen *storage* cloud, serta `email_service.py` untuk pengiriman email.
+- `model/` : Direktori untuk menampung bobot model `.keras` (atau `.tflite`) dan file *state* normalisasi (`norm_mean.npy`, `norm_std.npy`).
+- `main.py` : Berfungsi secara eksklusif sebagai *entrypoint* aplikasi dan memuat seluruh router FastAPI.
+
+*(Catatan: Direktori penyimpanan lokal seperti `uploads/audio` dan `audio` kini sudah sepenuhnya tergantikan oleh Cloudinary, membuat backend menjadi 100% stateless dan cloud-ready)*
 
 ---
 **Tarteel Space API** | Dikembangkan oleh **Rizal Haryaputra** | Teknologi Informasi UNY | 2026

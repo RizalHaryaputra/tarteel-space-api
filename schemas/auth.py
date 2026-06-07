@@ -10,6 +10,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_name: str
     user_id: str
+    role: str = "user"
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
