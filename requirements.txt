@@ -6,7 +6,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==3.2.0
 pydantic[email]==2.7.1
 mysql-connector-python==8.4.0
-librosa==0.10.2
+librosa==0.10.2     
 numpy==1.26.4
 ai-edge-litert
 av>=12.0.0

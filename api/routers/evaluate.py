@@ -30,7 +30,7 @@ def upload_audio_background_task(eval_id: str, audio_bytes: bytes, audio_filenam
         print(f"[Cloudinary-BG] Audio berhasil diunggah ke cloud: {audio_path}")
         
         # Update database with the Cloudinary URL
-        db = get_db_connection()
+        db = get_db_connection() 
         try:
             cursor = db.cursor()
             cursor.execute("UPDATE evaluations SET audio_path = %s WHERE id = %s", (audio_path, eval_id))
