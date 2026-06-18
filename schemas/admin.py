@@ -1,10 +1,11 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 class UserRoleUpdate(BaseModel):
     role: str
 
 class LetterCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     base_letter: str
     harakat: str
     pronunciation: str
@@ -12,6 +13,7 @@ class LetterCreate(BaseModel):
     model_label: str
 
 class LetterUpdate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     base_letter: Optional[str] = None
     harakat: Optional[str] = None
     pronunciation: Optional[str] = None
