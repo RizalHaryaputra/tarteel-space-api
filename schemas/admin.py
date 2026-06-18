@@ -25,3 +25,7 @@ class DatasetPoolCreate(BaseModel):
     verified_label: str
     is_verified_correct: bool = True
     admin_notes: Optional[str] = None
+
+class MarkTrainedRequest(BaseModel):
+    dataset_ids: list[int]
+    is_trained: bool = True
