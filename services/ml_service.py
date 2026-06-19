@@ -5,6 +5,15 @@ from core.config import (
     SAMPLE_RATE, MAX_LEN, N_MFCC, N_FFT, HOP_LEN, TEMPERATURE
 )
 
+try:
+    from ai_edge_litert.interpreter import Interpreter # type: ignore
+except ImportError:
+    try:
+        from tflite_runtime.interpreter import Interpreter # type: ignore
+    except ImportError:
+        import tensorflow.lite as tflite
+        Interpreter = tflite.Interpreter
+
 # Global dictionary to hold model, label map, and normalization stats
 ml_state = {}
 
@@ -170,3 +179,74 @@ def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple
         print(f"[Inference] Target: {expected_label} = {expected_confidence:.1f}%")
 
     return top_label, confidence, top3, expected_confidence, top5
+
+
+def reload_and_warmup_model(model_path: str, mean_path: str, std_path: str, label_path: str):
+    """
+    Muat file model/mean/std ke memori sementara, lakukan warm-up inferensi,
+    lalu lakukan atomic swap ke `ml_state` global agar user tidak mengalami downtime.
+    """
+    import json
+    import io
+    import soundfile as sf
+    import time
+
+    start_time = time.time()
+    print("[Model] Memulai proses Reload & Warm-up (Background)...")
+
+    # 1. Load ke variabel sementara
+    new_interpreter = Interpreter(model_path=str(model_path))
+    new_interpreter.allocate_tensors()
+    new_input_details = new_interpreter.get_input_details()
+    new_output_details = new_interpreter.get_output_details()
+
+    with open(label_path) as f:
+        mapping = json.load(f)
+    new_idx2label = {int(k): v for k, v in mapping["idx2label"].items()}
+    new_label2idx = mapping["label2idx"]
+
+    new_norm_mean = float(np.load(mean_path)[0])
+    new_norm_std = float(np.load(std_path)[0])
+
+    # 2. Warm-up
+    print("[Model] Melakukan warm-up pada model baru...")
+    sr = 22050
+    t = np.linspace(0, 1, sr, endpoint=False)
+    dummy_audio = 0.5 * np.sin(2 * np.pi * 440 * t).astype(np.float32)
+    
+    buf = io.BytesIO()
+    sf.write(buf, dummy_audio, sr, format='WAV')
+    wav_bytes = buf.getvalue()
+    
+    # Gunakan norm sementara untuk preprocessing warm-up
+    old_mean = ml_state.get("norm_mean")
+    old_std = ml_state.get("norm_std")
+    ml_state["norm_mean"] = new_norm_mean
+    ml_state["norm_std"] = new_norm_std
+    
+    try:
+        dummy_mfcc = preprocess_and_extract_mfcc(wav_bytes)
+        
+        # Fake inference pada model baru
+        input_data = np.expand_dims(dummy_mfcc, axis=0)
+        new_interpreter.set_tensor(new_input_details[0]['index'], input_data)
+        new_interpreter.invoke()
+        _ = new_interpreter.get_tensor(new_output_details[0]['index'])[0]
+    except Exception as e:
+        # Revert norm sementara jika gagal
+        if old_mean is not None: ml_state["norm_mean"] = old_mean
+        if old_std is not None: ml_state["norm_std"] = old_std
+        print(f"[Model] Warm-up gagal: {e}")
+        raise e
+
+    # 3. ATOMIC SWAP
+    ml_state["interpreter"] = new_interpreter
+    ml_state["input_details"] = new_input_details
+    ml_state["output_details"] = new_output_details
+    ml_state["idx2label"] = new_idx2label
+    ml_state["label2idx"] = new_label2idx
+    ml_state["norm_mean"] = new_norm_mean
+    ml_state["norm_std"] = new_norm_std
+
+    elapsed = time.time() - start_time
+    print(f"[Model] Reload & Atomic Swap berhasil dalam {elapsed:.2f} detik! Model siap melayani.")
