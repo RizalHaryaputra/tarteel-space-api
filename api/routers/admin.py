@@ -2,8 +2,11 @@ import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
+import shutil
 from api.deps import get_db, get_current_admin
 from services.cloudinary_service import upload_audio_to_cloudinary
+from services.ml_service import reload_and_warmup_model
+from core.config import MODEL_PATH, NORM_MEAN_PATH, NORM_STD_PATH, LABEL_MAP_PATH
 from schemas.admin import UserRoleUpdate, LetterCreate, LetterUpdate, DatasetPoolCreate, MarkTrainedRequest
 
 router = APIRouter(prefix="/admin", tags=["Dashboard Admin"])
@@ -341,3 +344,29 @@ def mark_dataset_pool_trained(data: MarkTrainedRequest, db=Depends(get_db)):
         
     action_str = "ditraining" if data.is_trained else "belum ditraining"
     return {"message": f"{cursor.rowcount} data berhasil ditandai sebagai {action_str}"}
+
+# ──────────────────────────────────────────────────────────────────────────
+# 6. MODEL MANAGEMENT
+# ──────────────────────────────────────────────────────────────────────────
+
+@router.post("/model/upload", dependencies=[Depends(get_current_admin)])
+async def upload_ml_model(
+    tflite_file: UploadFile = File(...),
+    mean_file: UploadFile = File(...),
+    std_file: UploadFile = File(...)
+):
+    try:
+        # Save files directly overwriting the old ones
+        with open(MODEL_PATH, "wb") as f:
+            shutil.copyfileobj(tflite_file.file, f)
+        with open(NORM_MEAN_PATH, "wb") as f:
+            shutil.copyfileobj(mean_file.file, f)
+        with open(NORM_STD_PATH, "wb") as f:
+            shutil.copyfileobj(std_file.file, f)
+            
+        # Trigger reload & warm-up & atomic swap in background memory
+        reload_and_warmup_model(str(MODEL_PATH), str(NORM_MEAN_PATH), str(NORM_STD_PATH), str(LABEL_MAP_PATH))
+        
+        return {"message": "Model berhasil di-upload, di-warmup, dan di-swap secara aman tanpa downtime!"}
+    except Exception as e:
+        raise HTTPException(500, f"Gagal mengunggah dan memuat model: {str(e)}")
