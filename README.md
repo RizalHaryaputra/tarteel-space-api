@@ -11,8 +11,9 @@ Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan hur
 - **Manajemen Sesi & Riwayat**: Mencatat setiap sesi latihan dan skor evaluasi beserta rekaman audionya (tersimpan aman di **Cloudinary**).
 - **Dashboard Statistik**: Memberikan ringkasan performa harian pengguna, streak latihan, dan menganalisis huruf terlemah/terkuat.
 - **Panel Kontrol Admin**: Menyediakan endpoint statistik menyeluruh, manajemen daftar pengguna, dan manajemen huruf hijaiyah beserta audio referensi (Ustadz).
-- **Active Learning Loop**: Mendukung fitur pelaporan (feedback) dari pengguna atas prediksi yang salah, dan mengizinkan admin untuk memvalidasi rekaman sebagai *ground truth* baru.
-- **Dataset Pool & Ekspor**: Mengagregasi data rekaman audio yang tervalidasi untuk keperluan *retraining* model AI, serta dapat diekspor langsung ke format CSV atau JSON.
+- **Active Learning Loop**: Mendukung fitur pelaporan (feedback) dari pengguna atas prediksi yang salah, dan mengizinkan admin untuk memvalidasi rekaman sebagai *ground truth* baru. Admin juga dapat melacak **Status Training** (sudah/belum ditraining) pada tiap dataset.
+- **Dataset Pool & Ekspor**: Mengagregasi data rekaman audio yang tervalidasi untuk keperluan *retraining* model AI, dengan dukungan filter status training dan ekspor massal ke format CSV atau JSON.
+- **Zero-Downtime Model Hot-Swapping**: Fitur tingkat *Enterprise MLOps* yang memungkinkan Admin mengunggah dan mengganti model AI terbaru (`.tflite` dan `.npy`) langsung via dashboard secara *real-time* tanpa mengganggu alur inferensi pengguna (tanpa *downtime* / server restart).
 
 ## 🛠️ Teknologi yang Digunakan
 - **Framework Web**: FastAPI (Uvicorn)
