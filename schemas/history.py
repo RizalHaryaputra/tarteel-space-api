@@ -16,9 +16,15 @@ class HistoryItem(BaseModel):
     top3_predictions: Optional[List[Dict[str, Any]]] = None
     top5_predictions: Optional[List[Dict[str, Any]]] = None
 
+class LetterRecommendation(BaseModel):
+    base_letter: str
+    arabic_script: str
+    avg_score: float
+    total_trials: int
+
 class DashboardStats(BaseModel):
     total_latihan: int
     rata_rata_akurasi: float
     streak_hari: int
-    huruf_terlemah: Optional[str]
-    huruf_terkuat: Optional[str]
+    huruf_terlemah: List[LetterRecommendation]
+    huruf_terkuat: List[LetterRecommendation]

@@ -72,25 +72,25 @@ def get_dashboard(current_user: dict = Depends(get_current_user), db=Depends(get
 
     cursor.execute(
         """
-        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score
+        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score, COUNT(*) AS total_trials
         FROM evaluations e JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
         GROUP BY h.base_letter, h.arabic_script
-        ORDER BY COUNT(*) >= 3 DESC, avg_score ASC LIMIT 1
+        ORDER BY COUNT(*) >= 3 DESC, avg_score ASC LIMIT 3
         """, (uid,)
     )
-    lemah = cursor.fetchone()
+    lemah_rows = cursor.fetchall()
 
     cursor.execute(
         """
-        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score
+        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score, COUNT(*) AS total_trials
         FROM evaluations e JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
         GROUP BY h.base_letter, h.arabic_script
-        ORDER BY COUNT(*) >= 3 DESC, avg_score DESC LIMIT 1
+        ORDER BY COUNT(*) >= 3 DESC, avg_score DESC LIMIT 3
         """, (uid,)
     )
-    kuat = cursor.fetchone()
+    kuat_rows = cursor.fetchall()
 
     cursor.execute(
         """
@@ -105,6 +105,6 @@ def get_dashboard(current_user: dict = Depends(get_current_user), db=Depends(get
         total_latihan=stats["total"] or 0,
         rata_rata_akurasi=stats["avg_score"] or 0.0,
         streak_hari=streak_row["streak"] or 0,
-        huruf_terlemah=lemah["arabic_script"] if lemah else None,
-        huruf_terkuat=kuat["arabic_script"] if kuat else None,
+        huruf_terlemah=lemah_rows,
+        huruf_terkuat=kuat_rows,
     )
