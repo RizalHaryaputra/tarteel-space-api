@@ -15,7 +15,7 @@ from services.cloudinary_service import upload_audio_to_cloudinary
 
 router = APIRouter(prefix="/evaluate", tags=["Evaluasi Pelafalan"])
 
-# Cache sementara metrik pemrosesan sisi server berdasarkan evaluation_id
+# Cache sementara waktu inferensi model berdasarkan evaluation_id
 SERVER_BENCHMARK_CACHE: Dict[str, Dict[str, Any]] = {}
 
 def upload_audio_background_task(eval_id: str, audio_bytes: bytes, audio_filename: str):
@@ -61,7 +61,6 @@ async def evaluate_pronunciation(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    start_perf = time.perf_counter()
     ALLOWED_TYPES = ("audio/wav", "audio/wave", "audio/webm", "audio/ogg", "audio/mp4")
     content_type = (audio.content_type or "").lower()
     if not any(content_type.startswith(t) for t in ALLOWED_TYPES):
@@ -77,17 +76,17 @@ async def evaluate_pronunciation(
     if len(audio_bytes) < 1000:
         raise HTTPException(400, "Audio terlalu pendek, mohon rekam ulang")
 
-    t_pre_start = time.perf_counter()
     try:
         mfcc_feature = preprocess_and_extract_mfcc(audio_bytes)
     except Exception as e:
         raise HTTPException(422, f"Gagal memproses audio: {str(e)}")
-    t_pre_ms = (time.perf_counter() - t_pre_start) * 1000
 
     expected_label = letter["model_label"]
+
+    # Catat waktu inferensi model murni
     t_inf_start = time.perf_counter()
     top_label, top_confidence, top3, expected_confidence = run_inference(mfcc_feature, expected_label)
-    t_inf_ms = (time.perf_counter() - t_inf_start) * 1000
+    inference_ms = (time.perf_counter() - t_inf_start) * 1000
 
     accuracy_score = round(expected_confidence, 2)
     top3_json = json.dumps(top3)
@@ -121,14 +120,11 @@ async def evaluate_pronunciation(
         status_label = "Perlu Latihan"
         feedback = f"Perlu latihan lagi. Dengarkan kembali contoh pelafalan referensi untuk huruf {letter['base_letter']} {letter['harakat']} dan coba ulangi perlahan."
 
-    server_process_ms = (time.perf_counter() - start_perf) * 1000
-    print(f"[Evaluate] {letter['base_letter']} dievaluasi dalam {server_process_ms:.2f} ms (Preprocess: {t_pre_ms:.2f} ms, Inference: {t_inf_ms:.2f} ms)")
+    print(f"[Evaluate] {letter['base_letter']} | Inferensi: {inference_ms:.2f} ms")
 
-    # Simpan metrik komputasi server untuk dikaitkan dengan laporan end-to-end dari klien
+    # Simpan waktu inferensi ke cache sementara untuk dikaitkan dengan metrik E2E dari klien
     SERVER_BENCHMARK_CACHE[eval_id] = {
-        "preprocess_ms": round(t_pre_ms, 2),
-        "inference_ms": round(t_inf_ms, 2),
-        "server_total_ms": round(server_process_ms, 2),
+        "inference_ms": round(inference_ms, 2),
         "created_at": time.time()
     }
 
@@ -149,7 +145,7 @@ async def evaluate_pronunciation(
         status_label=status_label,
         feedback=feedback,
         top3_predictions=top3,
-        server_process_ms=round(server_process_ms, 2),
+        inference_ms=round(inference_ms, 2),
     )
 
 
@@ -159,35 +155,27 @@ async def record_evaluation_metric(
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Mencatat waktu respons end-to-end klien dan waktu komputasi server
+    Mencatat waktu respons end-to-end klien dan waktu inferensi model
     ke berkas log benchmark (logs/benchmark_latency.csv).
     """
     log_dir = Path("logs")
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "benchmark_latency.csv"
 
-    # Ambil catatan waktu server dari cache
+    # Ambil catatan waktu inferensi model dari cache
     server_data = SERVER_BENCHMARK_CACHE.pop(payload.evaluation_id, None)
-    if server_data:
-        server_total_ms = server_data["server_total_ms"]
-        preprocess_ms = server_data["preprocess_ms"]
-        inference_ms = server_data["inference_ms"]
-    else:
-        server_total_ms = payload.server_process_ms or 0.0
-        preprocess_ms = 0.0
-        inference_ms = 0.0
+    inference_ms = server_data["inference_ms"] if server_data else 0.0
 
-    network_latency_ms = round(max(0.0, payload.client_e2e_ms - server_total_ms), 2)
     now_iso = datetime.now().isoformat()
     device = (payload.device_type or "desktop").lower()
 
     file_exists = log_file.exists()
     with open(log_file, "a", encoding="utf-8") as f:
         if not file_exists:
-            f.write("timestamp,evaluation_id,user_id,device_type,client_e2e_ms,server_total_ms,preprocess_ms,inference_ms,network_latency_ms\n")
-        f.write(f"{now_iso},{payload.evaluation_id},{current_user['id']},{device},{payload.client_e2e_ms:.2f},{server_total_ms:.2f},{preprocess_ms:.2f},{inference_ms:.2f},{network_latency_ms:.2f}\n")
+            f.write("timestamp,evaluation_id,device_type,client_e2e_ms,inference_ms\n")
+        f.write(f"{now_iso},{payload.evaluation_id},{device},{payload.client_e2e_ms:.2f},{inference_ms:.2f}\n")
 
-    print(f"[Benchmark-Log] {device.upper()} | E2E: {payload.client_e2e_ms:.2f}ms | Server: {server_total_ms:.2f}ms (Preprocess: {preprocess_ms:.2f}ms, Inference: {inference_ms:.2f}ms) | Network: {network_latency_ms:.2f}ms")
+    print(f"[Benchmark-Log] {device.upper()} | E2E: {payload.client_e2e_ms:.2f}ms | Inferensi: {inference_ms:.2f}ms")
 
     return {
         "status": "success",
@@ -195,8 +183,5 @@ async def record_evaluation_metric(
         "evaluation_id": payload.evaluation_id,
         "device_type": device,
         "client_e2e_ms": payload.client_e2e_ms,
-        "server_total_ms": server_total_ms,
-        "preprocess_ms": preprocess_ms,
-        "inference_ms": inference_ms,
-        "network_latency_ms": network_latency_ms
+        "inference_ms": inference_ms
     }

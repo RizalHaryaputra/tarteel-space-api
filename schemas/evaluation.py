@@ -12,10 +12,9 @@ class EvaluationResult(BaseModel):
     status_label: Optional[str] = None
     feedback: str
     top3_predictions: List[Dict[str, Any]]
-    server_process_ms: Optional[float] = None
+    inference_ms: Optional[float] = None
 
 class EvaluationMetricPayload(BaseModel):
     evaluation_id: str
     client_e2e_ms: float
     device_type: Optional[str] = "desktop"
-    server_process_ms: Optional[float] = None
