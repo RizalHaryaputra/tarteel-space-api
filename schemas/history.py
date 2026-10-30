@@ -7,12 +7,10 @@ class HistoryItem(BaseModel):
     harakat: str
     arabic_script: str
     accuracy_score: float
-    is_correct: bool
     created_at: str
     user_audio: Optional[str] = None
     ustadz_audio: Optional[str] = None
     top3_predictions: Optional[List[Dict[str, Any]]] = None
-    top5_predictions: Optional[List[Dict[str, Any]]] = None
 
 class LetterRecommendation(BaseModel):
     base_letter: str

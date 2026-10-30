@@ -17,7 +17,7 @@ def get_history(
     cursor.execute(
         """
         SELECT e.id, h.base_letter, h.harakat, h.arabic_script,
-               e.accuracy_score, e.is_correct,
+               e.accuracy_score,
                CAST(e.created_at AS CHAR) AS created_at,
                e.top3_predictions,
                e.audio_path AS user_audio, h.audio_url AS ustadz_audio

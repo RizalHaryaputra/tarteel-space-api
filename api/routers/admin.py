@@ -234,7 +234,7 @@ def get_user_feedbacks(limit: int = 50, offset: int = 0, db=Depends(get_db)):
         """
         SELECT f.id AS feedback_id, f.comment, CAST(f.created_at AS CHAR) AS created_at,
                u.name AS user_name, u.email AS user_email,
-               e.id AS evaluation_id, e.accuracy_score, e.top_prediction, e.top5_predictions, e.is_correct, e.audio_path AS audio_url, e.is_verified,
+               e.id AS evaluation_id, e.accuracy_score, e.top_prediction, e.top3_predictions, e.audio_path AS audio_url, e.is_verified,
                h.base_letter, h.harakat, h.arabic_script, h.pronunciation
         FROM user_feedbacks f
         JOIN users u ON f.user_id = u.id
@@ -249,14 +249,14 @@ def get_user_feedbacks(limit: int = 50, offset: int = 0, db=Depends(get_db)):
     
     for fb in feedbacks:
         fb["accuracy_score"] = float(fb["accuracy_score"])
-        # Parse top5_predictions
-        if fb.get("top5_predictions"):
+        # Parse top3_predictions
+        if fb.get("top3_predictions"):
             try:
-                fb["top5_predictions"] = json.loads(fb["top5_predictions"])
+                fb["top3_predictions"] = json.loads(fb["top3_predictions"])
             except Exception:
-                fb["top5_predictions"] = []
+                fb["top3_predictions"] = []
         else:
-            fb["top5_predictions"] = []
+            fb["top3_predictions"] = []
             
     return feedbacks
 

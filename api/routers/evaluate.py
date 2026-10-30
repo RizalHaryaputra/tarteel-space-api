@@ -6,7 +6,7 @@ from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, Backgro
 
 from api.deps import get_db, get_current_user
 from db.database import get_db_connection
-from core.config import THRESHOLD, UPLOAD_DIR
+from core.config import UPLOAD_DIR
 from schemas.evaluation import EvaluationResult
 from services.ml_service import preprocess_and_extract_mfcc, run_inference
 from services.cloudinary_service import upload_audio_to_cloudinary
@@ -78,12 +78,10 @@ async def evaluate_pronunciation(
         raise HTTPException(422, f"Gagal memproses audio: {str(e)}")
 
     expected_label = letter["model_label"]
-    top_label, top_confidence, top3, expected_confidence, top5 = run_inference(mfcc_feature, expected_label)
+    top_label, top_confidence, top3, expected_confidence = run_inference(mfcc_feature, expected_label)
 
-    is_correct = (top_label == expected_label) and (top_confidence >= THRESHOLD)
     accuracy_score = round(expected_confidence, 2)
     top3_json = json.dumps(top3)
-    top5_json = json.dumps(top5)
     
     eval_id = str(uuid.uuid4())
     audio_filename = f"{current_user['id']}_{letter_id}_{eval_id[:8]}.wav"
@@ -92,24 +90,27 @@ async def evaluate_pronunciation(
     cursor.execute(
         """
         INSERT INTO evaluations
-            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, is_correct, top3_predictions, top5_predictions)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (id, user_id, session_id, letter_id, audio_path, accuracy_score, top_prediction, top3_predictions)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (eval_id, current_user["id"], session_id, letter_id,
-         initial_audio_path, accuracy_score, top_label, int(is_correct), top3_json, top5_json)
+         initial_audio_path, accuracy_score, top_label, top3_json)
     )
     db.commit()
 
     # Schedule the upload to happen in the background
     background_tasks.add_task(upload_audio_background_task, eval_id, audio_bytes, audio_filename)
 
-    status_label = "Tepat ✓" if is_correct else "Kurang Tepat ✗"
-    if is_correct:
-        feedback = f"Bagus! Pelafalan {letter['base_letter']} {letter['harakat']} Anda sudah benar."
-    elif accuracy_score >= 50:
-        feedback = f"Hampir benar! Perhatikan makhraj huruf {letter['base_letter']}, skor Anda {accuracy_score:.1f}%."
+    # Feedback dinamis berbasis persentase akurasi
+    if accuracy_score >= 80:
+        status_label = "Sangat Baik"
+        feedback = f"Luar biasa! Pelafalan {letter['base_letter']} {letter['harakat']} Anda sudah sangat tepat dan artikulasi makhrajnya terdengar jelas."
+    elif accuracy_score >= 60:
+        status_label = "Cukup Baik"
+        feedback = f"Cukup baik! Pelafalan {letter['base_letter']} {letter['harakat']} sudah mendekati tepat, latih kembali kejelasan artikulasi makhrajnya."
     else:
-        feedback = f"Perlu latihan lagi. Dengarkan contoh pelafalan {letter['base_letter']} dan coba ulangi."
+        status_label = "Perlu Latihan"
+        feedback = f"Perlu latihan lagi. Dengarkan kembali contoh pelafalan referensi untuk huruf {letter['base_letter']} {letter['harakat']} dan coba ulangi perlahan."
 
     elapsed_time = time.time() - start_time
     print(f"[Evaluate] {letter['base_letter']} dievaluasi dalam {elapsed_time:.3f} detik")
@@ -122,9 +123,7 @@ async def evaluate_pronunciation(
         arabic_script=letter["arabic_script"],
         accuracy_score=accuracy_score,
         top_prediction=top_label,
-        is_correct=is_correct,
         status_label=status_label,
         feedback=feedback,
         top3_predictions=top3,
-        top5_predictions=top5,
     )
