@@ -19,7 +19,7 @@ def get_history(
         SELECT e.id, h.base_letter, h.harakat, h.arabic_script,
                e.accuracy_score, e.is_correct,
                CAST(e.created_at AS CHAR) AS created_at,
-               e.top3_predictions, e.tajweed_grade, e.ai_explanation,
+               e.top3_predictions,
                e.audio_path AS user_audio, h.audio_url AS ustadz_audio
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id

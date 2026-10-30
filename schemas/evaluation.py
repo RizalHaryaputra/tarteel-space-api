@@ -12,6 +12,5 @@ class EvaluationResult(BaseModel):
     is_correct: bool
     status_label: str    # "Tepat ✓" atau "Kurang Tepat ✗"
     feedback: str        # pesan umpan balik
-    tajweed_grade: str
     top3_predictions: List[Dict[str, Any]]
     top5_predictions: Optional[List[Dict[str, Any]]] = None
