@@ -11,6 +11,12 @@ class HistoryItem(BaseModel):
     user_audio: Optional[str] = None
     ustadz_audio: Optional[str] = None
     top3_predictions: Optional[List[Dict[str, Any]]] = None
+    is_reported: bool = False
+    user_comment: Optional[str] = None
+    is_verified: bool = False
+    verified_label: Optional[str] = None
+    is_verified_correct: Optional[bool] = None
+    admin_notes: Optional[str] = None
 
 class LetterRecommendation(BaseModel):
     base_letter: str

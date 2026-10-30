@@ -235,11 +235,13 @@ def get_user_feedbacks(limit: int = 50, offset: int = 0, db=Depends(get_db)):
         SELECT f.id AS feedback_id, f.comment, CAST(f.created_at AS CHAR) AS created_at,
                u.name AS user_name, u.email AS user_email,
                e.id AS evaluation_id, e.accuracy_score, e.top_prediction, e.top3_predictions, e.audio_path AS audio_url, e.is_verified,
-               h.base_letter, h.harakat, h.arabic_script, h.pronunciation
+               h.base_letter, h.harakat, h.arabic_script, h.pronunciation, h.model_label AS original_target_label,
+               dp.verified_label, dp.is_verified_correct, dp.admin_notes
         FROM user_feedbacks f
         JOIN users u ON f.user_id = u.id
         JOIN evaluations e ON f.evaluation_id = e.id
         JOIN hijaiyah_letters h ON e.letter_id = h.id
+        LEFT JOIN dataset_pool dp ON dp.evaluation_id = e.id
         ORDER BY f.created_at DESC
         LIMIT %s OFFSET %s
         """,
@@ -261,11 +263,23 @@ def get_user_feedbacks(limit: int = 50, offset: int = 0, db=Depends(get_db)):
     return feedbacks
 
 @router.post("/dataset-pool", dependencies=[Depends(get_current_admin)])
+@router.post("/feedbacks/verify", dependencies=[Depends(get_current_admin)])
 def add_to_dataset_pool(data: DatasetPoolCreate, db=Depends(get_db)):
     cursor = db.cursor(dictionary=True)
     
+    eval_id = data.evaluation_id
+    if not eval_id and data.feedback_id:
+        cursor.execute("SELECT evaluation_id FROM user_feedbacks WHERE id = %s", (data.feedback_id,))
+        fb_row = cursor.fetchone()
+        if not fb_row:
+            raise HTTPException(404, "Feedback tidak ditemukan")
+        eval_id = fb_row["evaluation_id"]
+
+    if not eval_id:
+        raise HTTPException(400, "evaluation_id atau feedback_id wajib diisi")
+
     # Verify evaluation exists
-    cursor.execute("SELECT id FROM evaluations WHERE id = %s", (data.evaluation_id,))
+    cursor.execute("SELECT id FROM evaluations WHERE id = %s", (eval_id,))
     if not cursor.fetchone():
         raise HTTPException(404, "Evaluasi tidak ditemukan")
         
@@ -280,11 +294,11 @@ def add_to_dataset_pool(data: DatasetPoolCreate, db=Depends(get_db)):
                 is_verified_correct = VALUES(is_verified_correct),
                 admin_notes = VALUES(admin_notes)
             """,
-            (data.evaluation_id, data.verified_label, int(data.is_verified_correct), data.admin_notes)
+            (eval_id, data.verified_label, int(data.is_verified_correct), data.admin_notes)
         )
         
         # Mark evaluation as verified
-        cursor.execute("UPDATE evaluations SET is_verified = 1 WHERE id = %s", (data.evaluation_id,))
+        cursor.execute("UPDATE evaluations SET is_verified = 1 WHERE id = %s", (eval_id,))
         db.commit()
     except Exception as e:
         db.rollback()

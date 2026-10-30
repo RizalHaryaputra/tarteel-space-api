@@ -21,7 +21,8 @@ class LetterUpdate(BaseModel):
     model_label: Optional[str] = None
 
 class DatasetPoolCreate(BaseModel):
-    evaluation_id: str
+    evaluation_id: Optional[str] = None
+    feedback_id: Optional[str] = None
     verified_label: str
     is_verified_correct: bool = True
     admin_notes: Optional[str] = None
