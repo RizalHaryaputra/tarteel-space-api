@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from core.config import (
-    MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, UPLOAD_DIR, SESSION_SECRET_KEY, FRONTEND_URL
+    MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, UPLOAD_DIR, SESSION_SECRET_KEY, FRONTEND_URL, CORS_ORIGINS
 )
 from services.ml_service import ml_state, reload_and_warmup_model
 from api.routers import auth, letters, evaluate, sessions, history, oauth, feedback, admin, profile
@@ -42,7 +42,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(set([FRONTEND_URL, "http://localhost:3000"])),
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

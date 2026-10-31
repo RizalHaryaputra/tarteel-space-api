@@ -17,12 +17,24 @@ def get_history(
     cursor.execute(
         """
         SELECT e.id, h.base_letter, h.harakat, h.arabic_script,
-               e.accuracy_score, e.is_correct,
+               e.accuracy_score,
                CAST(e.created_at AS CHAR) AS created_at,
-               e.top3_predictions, e.tajweed_grade, e.ai_explanation,
-               e.audio_path AS user_audio, h.audio_url AS ustadz_audio
+               e.top3_predictions,
+               e.audio_path AS user_audio, h.audio_url AS ustadz_audio,
+               e.is_verified,
+               uf.id AS feedback_id,
+               uf.comment AS user_comment,
+               dp.verified_label,
+               dp.is_verified_correct,
+               dp.admin_notes,
+               vh.base_letter AS verified_base_letter,
+               vh.harakat AS verified_harakat,
+               vh.arabic_script AS verified_arabic_script
         FROM evaluations e
         JOIN hijaiyah_letters h ON e.letter_id = h.id
+        LEFT JOIN user_feedbacks uf ON uf.evaluation_id = e.id
+        LEFT JOIN dataset_pool dp ON dp.evaluation_id = e.id
+        LEFT JOIN hijaiyah_letters vh ON vh.model_label = dp.verified_label
         WHERE e.user_id = %s
         ORDER BY e.created_at DESC
         LIMIT %s OFFSET %s
@@ -38,6 +50,16 @@ def get_history(
                 row["top3_predictions"] = []
         else:
             row["top3_predictions"] = []
+
+        row["is_reported"] = bool(row.get("feedback_id"))
+        row["is_verified"] = bool(row.get("is_verified") or row.get("verified_label"))
+
+        if row.get("verified_base_letter"):
+            row["verified_label"] = f"{row['verified_base_letter']} {row['verified_harakat']} ({row['verified_arabic_script']})"
+
+        if row.get("is_verified_correct") is not None:
+            row["is_verified_correct"] = bool(row["is_verified_correct"])
+
     return results
 
 @router.get("/weekly")
@@ -72,25 +94,25 @@ def get_dashboard(current_user: dict = Depends(get_current_user), db=Depends(get
 
     cursor.execute(
         """
-        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score
+        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score, COUNT(*) AS total_trials
         FROM evaluations e JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
         GROUP BY h.base_letter, h.arabic_script
-        ORDER BY COUNT(*) >= 3 DESC, avg_score ASC LIMIT 1
+        ORDER BY COUNT(*) >= 3 DESC, avg_score ASC LIMIT 3
         """, (uid,)
     )
-    lemah = cursor.fetchone()
+    lemah_rows = cursor.fetchall()
 
     cursor.execute(
         """
-        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score
+        SELECT h.base_letter, h.arabic_script, ROUND(AVG(e.accuracy_score),2) AS avg_score, COUNT(*) AS total_trials
         FROM evaluations e JOIN hijaiyah_letters h ON e.letter_id = h.id
         WHERE e.user_id = %s
         GROUP BY h.base_letter, h.arabic_script
-        ORDER BY COUNT(*) >= 3 DESC, avg_score DESC LIMIT 1
+        ORDER BY COUNT(*) >= 3 DESC, avg_score DESC LIMIT 3
         """, (uid,)
     )
-    kuat = cursor.fetchone()
+    kuat_rows = cursor.fetchall()
 
     cursor.execute(
         """
@@ -105,6 +127,6 @@ def get_dashboard(current_user: dict = Depends(get_current_user), db=Depends(get
         total_latihan=stats["total"] or 0,
         rata_rata_akurasi=stats["avg_score"] or 0.0,
         streak_hari=streak_row["streak"] or 0,
-        huruf_terlemah=lemah["arabic_script"] if lemah else None,
-        huruf_terkuat=kuat["arabic_script"] if kuat else None,
+        huruf_terlemah=lemah_rows,
+        huruf_terkuat=kuat_rows,
     )

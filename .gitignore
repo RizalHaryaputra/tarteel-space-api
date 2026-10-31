@@ -17,6 +17,10 @@ __pycache__/
 uploads/
 /uploads/*
 
+# Benchmark and runtime logs
+logs/
+*.log
+
 # IDEs and Editors
 .vscode/
 .idea/

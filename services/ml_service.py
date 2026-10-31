@@ -133,7 +133,7 @@ def softmax_with_temperature(logits: np.ndarray, temperature: float) -> np.ndarr
     return exp / np.sum(exp)
 
 
-def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple[str, float, list, float, list]:
+def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple[str, float, list, float]:
     interpreter = ml_state["interpreter"]
     input_details = ml_state["input_details"]
     output_details = ml_state["output_details"]
@@ -171,14 +171,11 @@ def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple
 
     top3_idx = np.argsort(output)[::-1][:3]
     top3 = [{"label": idx2label[i], "score": round(float(output[i])*100, 2)} for i in top3_idx]
-
-    top5_idx = np.argsort(output)[::-1][:5]
-    top5 = [{"label": idx2label[i], "score": round(float(output[i])*100, 2)} for i in top5_idx]
-    print(f"[Inference] Top-5: " + " | ".join(f"{idx2label[i]}={output[i]*100:.1f}%" for i in top5_idx))
+    print(f"[Inference] Top-3: " + " | ".join(f"{idx2label[i]}={output[i]*100:.1f}%" for i in top3_idx))
     if expected_label:
         print(f"[Inference] Target: {expected_label} = {expected_confidence:.1f}%")
 
-    return top_label, confidence, top3, expected_confidence, top5
+    return top_label, confidence, top3, expected_confidence
 
 
 def reload_and_warmup_model(model_path: str, mean_path: str, std_path: str, label_path: str):

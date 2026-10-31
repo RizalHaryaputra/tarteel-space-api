@@ -7,18 +7,26 @@ class HistoryItem(BaseModel):
     harakat: str
     arabic_script: str
     accuracy_score: float
-    is_correct: bool
     created_at: str
-    tajweed_grade: Optional[str] = None
-    ai_explanation: Optional[str] = None
     user_audio: Optional[str] = None
     ustadz_audio: Optional[str] = None
     top3_predictions: Optional[List[Dict[str, Any]]] = None
-    top5_predictions: Optional[List[Dict[str, Any]]] = None
+    is_reported: bool = False
+    user_comment: Optional[str] = None
+    is_verified: bool = False
+    verified_label: Optional[str] = None
+    is_verified_correct: Optional[bool] = None
+    admin_notes: Optional[str] = None
+
+class LetterRecommendation(BaseModel):
+    base_letter: str
+    arabic_script: str
+    avg_score: float
+    total_trials: int
 
 class DashboardStats(BaseModel):
     total_latihan: int
     rata_rata_akurasi: float
     streak_hari: int
-    huruf_terlemah: Optional[str]
-    huruf_terkuat: Optional[str]
+    huruf_terlemah: List[LetterRecommendation]
+    huruf_terkuat: List[LetterRecommendation]

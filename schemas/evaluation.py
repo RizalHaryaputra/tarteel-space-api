@@ -9,9 +9,12 @@ class EvaluationResult(BaseModel):
     arabic_script: str
     accuracy_score: float
     top_prediction: str
-    is_correct: bool
-    status_label: str    # "Tepat ✓" atau "Kurang Tepat ✗"
-    feedback: str        # pesan umpan balik
-    tajweed_grade: str
+    status_label: Optional[str] = None
+    feedback: str
     top3_predictions: List[Dict[str, Any]]
-    top5_predictions: Optional[List[Dict[str, Any]]] = None
+    inference_ms: Optional[float] = None
+
+class EvaluationMetricPayload(BaseModel):
+    evaluation_id: str
+    client_e2e_ms: float
+    device_type: Optional[str] = "desktop"
