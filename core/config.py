@@ -12,7 +12,10 @@ SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+_raw_frontend = os.getenv("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = _raw_frontend.split(",")[0].strip().rstrip("/")
+_raw_origins = [u.strip().rstrip("/") for u in _raw_frontend.split(",") if u.strip()]
+CORS_ORIGINS = list(set(_raw_origins + ["http://localhost:3000", "http://127.0.0.1:3000"]))
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
