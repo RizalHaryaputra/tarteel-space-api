@@ -48,7 +48,8 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
     return TokenResponse(
         access_token=token,
         user_name=user["name"],
-        user_id=user["id"]
+        user_id=user["id"],
+        role=user["role"]
     )
 
 @router.post("/forgot-password")

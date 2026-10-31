@@ -17,6 +17,10 @@ __pycache__/
 uploads/
 /uploads/*
 
+# Benchmark and runtime logs
+logs/
+*.log
+
 # IDEs and Editors
 .vscode/
 .idea/
@@ -26,3 +30,8 @@ uploads/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Node.js (for local MCP server)
+node_modules/
+package-lock.json
+package.json

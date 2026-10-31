@@ -30,4 +30,4 @@ RUN mkdir -p uploads/audio
 EXPOSE 8000
 
 # Jalankan server uvicorn secara dinamis menggunakan port dari environment variable (default: 8000)
-CMD sh -c "uvicorn main:app --host 0.0.0.0 --port \${PORT:-8000}"
+CMD sh -c "uvicorn main:app --host 0.0.0.0 --port \${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"
