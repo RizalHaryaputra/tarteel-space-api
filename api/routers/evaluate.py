@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 
 from api.deps import get_db, get_current_user
 from db.database import get_db_connection
@@ -185,3 +186,16 @@ async def record_evaluation_metric(
         "client_e2e_ms": payload.client_e2e_ms,
         "inference_ms": inference_ms
     }
+
+
+@router.get("/benchmark-log/download")
+def download_benchmark_log(current_user: dict = Depends(get_current_user)):
+    """Mengunduh berkas log benchmark_latency.csv langsung dari server."""
+    log_file = Path("logs") / "benchmark_latency.csv"
+    if not log_file.exists():
+        raise HTTPException(404, "Berkas log benchmark belum ditemukan di server.")
+    return FileResponse(
+        path=str(log_file),
+        filename="benchmark_latency.csv",
+        media_type="text/csv"
+    )
