@@ -9,7 +9,6 @@ from fastapi.responses import FileResponse
 
 from api.deps import get_db, get_current_user
 from db.database import get_db_connection
-from core.config import UPLOAD_DIR
 from schemas.evaluation import EvaluationResult, EvaluationMetricPayload
 from services.ml_service import preprocess_and_extract_mfcc, run_inference
 from services.cloudinary_service import upload_audio_to_cloudinary
@@ -19,31 +18,13 @@ router = APIRouter(prefix="/evaluate", tags=["Evaluasi Pelafalan"])
 # Cache sementara waktu inferensi model berdasarkan evaluation_id
 SERVER_BENCHMARK_CACHE: Dict[str, Dict[str, Any]] = {}
 
+
 def upload_audio_background_task(eval_id: str, audio_bytes: bytes, audio_filename: str):
     """Background task to upload audio to Cloudinary and update the database."""
     try:
         audio_path = upload_audio_to_cloudinary(audio_bytes, audio_filename, folder="evaluations")
         print(f"[Cloudinary-BG] Audio berhasil diunggah ke cloud: {audio_path}")
-        
-        # Update database with the Cloudinary URL
-        db = get_db_connection() 
-        try:
-            cursor = db.cursor()
-            cursor.execute("UPDATE evaluations SET audio_path = %s WHERE id = %s", (audio_path, eval_id))
-            db.commit()
-            cursor.close()
-        finally:
-            db.close()
-            
-    except Exception as e:
-        # Fallback local file storage if Cloudinary fails
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        audio_path_obj = UPLOAD_DIR / audio_filename
-        audio_path_obj.write_bytes(audio_bytes)
-        audio_path = str(audio_path_obj)
-        print(f"[Local Storage-BG] Cloudinary gagal/belum diset ({e}), menyimpan secara lokal di: {audio_path}")
-        
-        # Update database with the local path
+
         db = get_db_connection()
         try:
             cursor = db.cursor()
@@ -52,6 +33,61 @@ def upload_audio_background_task(eval_id: str, audio_bytes: bytes, audio_filenam
             cursor.close()
         finally:
             db.close()
+
+    except Exception as e:
+        print(f"[Cloudinary-BG] Gagal mengunggah audio ke Cloudinary ({e})")
+
+
+@router.post("/metrics")
+async def record_evaluation_metric(
+    payload: EvaluationMetricPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Mencatat waktu respons end-to-end klien dan waktu inferensi model
+    ke berkas log benchmark (logs/benchmark_latency.csv).
+    """
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "benchmark_latency.csv"
+
+    # Ambil catatan waktu inferensi model dari cache
+    server_data = SERVER_BENCHMARK_CACHE.pop(payload.evaluation_id, None)
+    inference_ms = server_data["inference_ms"] if server_data else 0.0
+
+    now_iso = datetime.now().isoformat()
+    device = (payload.device_type or "desktop").lower()
+
+    file_exists = log_file.exists() and log_file.stat().st_size > 0
+    with open(log_file, "a", encoding="utf-8") as f:
+        if not file_exists:
+            f.write("timestamp,evaluation_id,device_type,client_e2e_ms,inference_ms\n")
+        f.write(f"{now_iso},{payload.evaluation_id},{device},{payload.client_e2e_ms:.2f},{inference_ms:.2f}\n")
+
+    print(f"[Benchmark-Log] {device.upper()} | E2E: {payload.client_e2e_ms:.2f}ms | Inferensi: {inference_ms:.2f}ms")
+
+    return {
+        "status": "success",
+        "message": "Metrik waktu respons berhasil dicatat",
+        "evaluation_id": payload.evaluation_id,
+        "device_type": device,
+        "client_e2e_ms": payload.client_e2e_ms,
+        "inference_ms": inference_ms
+    }
+
+
+@router.get("/benchmark-log/download")
+def download_benchmark_log(current_user: dict = Depends(get_current_user)):
+    """Mengunduh berkas log benchmark_latency.csv langsung dari server."""
+    log_file = Path("logs") / "benchmark_latency.csv"
+    if not log_file.exists():
+        raise HTTPException(404, "Berkas log benchmark belum ditemukan di server.")
+    return FileResponse(
+        path=str(log_file),
+        filename="benchmark_latency.csv",
+        media_type="text/csv"
+    )
+
 
 @router.post("/{letter_id}", response_model=EvaluationResult)
 async def evaluate_pronunciation(
@@ -91,7 +127,7 @@ async def evaluate_pronunciation(
 
     accuracy_score = round(expected_confidence, 2)
     top3_json = json.dumps(top3)
-    
+
     eval_id = str(uuid.uuid4())
     audio_filename = f"{current_user['id']}_{letter_id}_{eval_id[:8]}.wav"
     initial_audio_path = "uploading..."
@@ -147,55 +183,4 @@ async def evaluate_pronunciation(
         feedback=feedback,
         top3_predictions=top3,
         inference_ms=round(inference_ms, 2),
-    )
-
-
-@router.post("/metrics")
-async def record_evaluation_metric(
-    payload: EvaluationMetricPayload,
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Mencatat waktu respons end-to-end klien dan waktu inferensi model
-    ke berkas log benchmark (logs/benchmark_latency.csv).
-    """
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "benchmark_latency.csv"
-
-    # Ambil catatan waktu inferensi model dari cache
-    server_data = SERVER_BENCHMARK_CACHE.pop(payload.evaluation_id, None)
-    inference_ms = server_data["inference_ms"] if server_data else 0.0
-
-    now_iso = datetime.now().isoformat()
-    device = (payload.device_type or "desktop").lower()
-
-    file_exists = log_file.exists()
-    with open(log_file, "a", encoding="utf-8") as f:
-        if not file_exists:
-            f.write("timestamp,evaluation_id,device_type,client_e2e_ms,inference_ms\n")
-        f.write(f"{now_iso},{payload.evaluation_id},{device},{payload.client_e2e_ms:.2f},{inference_ms:.2f}\n")
-
-    print(f"[Benchmark-Log] {device.upper()} | E2E: {payload.client_e2e_ms:.2f}ms | Inferensi: {inference_ms:.2f}ms")
-
-    return {
-        "status": "success",
-        "message": "Metrik waktu respons berhasil dicatat",
-        "evaluation_id": payload.evaluation_id,
-        "device_type": device,
-        "client_e2e_ms": payload.client_e2e_ms,
-        "inference_ms": inference_ms
-    }
-
-
-@router.get("/benchmark-log/download")
-def download_benchmark_log(current_user: dict = Depends(get_current_user)):
-    """Mengunduh berkas log benchmark_latency.csv langsung dari server."""
-    log_file = Path("logs") / "benchmark_latency.csv"
-    if not log_file.exists():
-        raise HTTPException(404, "Berkas log benchmark belum ditemukan di server.")
-    return FileResponse(
-        path=str(log_file),
-        filename="benchmark_latency.csv",
-        media_type="text/csv"
     )

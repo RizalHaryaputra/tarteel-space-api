@@ -1,19 +1,25 @@
-import json
+from pathlib import Path
 from contextlib import asynccontextmanager
-import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from core.config import (
-    MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, UPLOAD_DIR, SESSION_SECRET_KEY, FRONTEND_URL, CORS_ORIGINS
+    MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, SESSION_SECRET_KEY, CORS_ORIGINS
 )
 from services.ml_service import ml_state, reload_and_warmup_model
 from api.routers import auth, letters, evaluate, sessions, history, oauth, feedback, admin, profile
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[Startup] Memuat model TFLite dan melakukan warm-up...")
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Siapkan direktori dan berkas log benchmark sejak startup
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "benchmark_latency.csv"
+    if not log_file.exists() or log_file.stat().st_size == 0:
+        log_file.write_text("timestamp,evaluation_id,device_type,client_e2e_ms,inference_ms\n", encoding="utf-8")
 
     try:
         reload_and_warmup_model(
@@ -58,6 +64,7 @@ app.include_router(history.router)
 app.include_router(feedback.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
+
 
 @app.get("/")
 def root():

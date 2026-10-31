@@ -1,7 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
 from api.deps import get_db
-from core.config import AUDIO_DIR
 
 router = APIRouter(prefix="/letters", tags=["Huruf Hijaiyah"])
 

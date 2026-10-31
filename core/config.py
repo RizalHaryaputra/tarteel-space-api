@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,7 +26,7 @@ DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", "3306")),
     "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", ""),               
+    "password": os.getenv("DB_PASSWORD", ""),
     "database": os.getenv("DB_DATABASE", "db_tarteel_space"),
     "charset": os.getenv("DB_CHARSET", "utf8mb4"),
     "ssl_disabled": os.getenv("DB_SSL_DISABLED", "False").lower() in ("true", "1", "yes"),
@@ -37,8 +36,6 @@ MODEL_PATH = os.getenv("MODEL_PATH", "./model/hijaiyah_model.tflite")
 LABEL_MAP_PATH = os.getenv("LABEL_MAP_PATH", "./model/label_mapping.json")
 NORM_MEAN_PATH = os.getenv("NORM_MEAN_PATH", "./model/norm_mean.npy")
 NORM_STD_PATH = os.getenv("NORM_STD_PATH", "./model/norm_std.npy")
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads/audio"))
-AUDIO_DIR = Path(os.getenv("AUDIO_DIR", "./audio"))
 
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "22050"))
 DURATION = float(os.getenv("DURATION", "2.0"))
