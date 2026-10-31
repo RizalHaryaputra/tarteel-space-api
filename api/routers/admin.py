@@ -44,7 +44,7 @@ def get_admin_stats(db=Depends(get_db)):
         SELECT DATE_FORMAT(created_at, '%Y-%m-%d') as date, COUNT(*) as count 
         FROM evaluations 
         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-        GROUP BY DATE(created_at)
+        GROUP BY DATE_FORMAT(created_at, '%Y-%m-%d')
     """)
     trend_rows = cursor.fetchall()
     trend_dict = {row["date"]: row["count"] for row in trend_rows}
@@ -89,7 +89,7 @@ def get_all_users(limit: int = 50, offset: int = 0, db=Depends(get_db)):
                ROUND(AVG(e.accuracy_score), 2) AS average_accuracy
         FROM users u
         LEFT JOIN evaluations e ON u.id = e.user_id
-        GROUP BY u.id
+        GROUP BY u.id, u.name, u.email, u.role, u.avatar_url, u.created_at
         ORDER BY u.created_at DESC
         LIMIT %s OFFSET %s
         """,
