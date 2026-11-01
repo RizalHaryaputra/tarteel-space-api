@@ -5,38 +5,45 @@ Backend API untuk aplikasi **Tarteel Space** — platform evaluasi pelafalan hur
 ## ✨ Fitur Utama
 - **Autentikasi Pengguna**: Registrasi, Login, dan manajemen token JWT yang aman.
 - **Single Sign-On (SSO)**: Mendukung integrasi OAuth 2.0 untuk login via Google dan GitHub.
-- **Pemulihan Akun**: Fitur lupa & reset password menggunakan token aman dan notifikasi email via SMTP.
-- **Evaluasi Pelafalan (AI)**: Mengekstrak fitur audio (MFCC) dengan Librosa dan memprediksi keakuratan pelafalan menggunakan model Convolutional Neural Network (CNN).
-- **Penjelasan Tajwid Interaktif**: Menggunakan **Google Gemini AI** untuk memberikan analisis makhraj dan sifat huruf secara spesifik berdasarkan hasil prediksi model CNN.
-- **Manajemen Sesi & Riwayat**: Mencatat setiap sesi latihan dan skor evaluasi beserta rekaman audionya (tersimpan aman di **Cloudinary**).
-- **Dashboard Statistik**: Memberikan ringkasan performa harian pengguna, streak latihan, dan menganalisis huruf terlemah/terkuat.
-- **Panel Kontrol Admin**: Menyediakan endpoint statistik menyeluruh, manajemen daftar pengguna, dan manajemen huruf hijaiyah beserta audio referensi (Ustadz).
-- **Active Learning Loop**: Mendukung fitur pelaporan (feedback) dari pengguna atas prediksi yang salah, dan mengizinkan admin untuk memvalidasi rekaman sebagai *ground truth* baru. Admin juga dapat melacak **Status Training** (sudah/belum ditraining) pada tiap dataset.
-- **Dataset Pool & Ekspor**: Mengagregasi data rekaman audio yang tervalidasi untuk keperluan *retraining* model AI, dengan dukungan filter status training dan ekspor massal ke format CSV atau JSON.
-- **Zero-Downtime Model Hot-Swapping**: Fitur tingkat *Enterprise MLOps* yang memungkinkan Admin mengunggah dan mengganti model AI terbaru (`.tflite` dan `.npy`) langsung via dashboard secara *real-time* tanpa mengganggu alur inferensi pengguna (tanpa *downtime* / server restart).
+- **Pemulihan Akun**: Fitur lupa & reset password menggunakan token aman dan notifikasi email via SMTP Gmail.
+- **Evaluasi Pelafalan (AI CNN)**: Mengekstrak fitur audio (MFCC) dengan Librosa dan memprediksi keakuratan pelafalan menggunakan model Convolutional Neural Network (CNN) berbasis LiteRT (TensorFlow Lite).
+- **Sistem Umpan Balik Tiga Tingkat (Score-based Feedback)**: Mengkategorikan hasil pelafalan secara dinamis berdasarkan skor akurasi:
+  - **Sangat Baik** (skor $\ge$ 80%)
+  - **Cukup Baik** (skor 60% – 79%)
+  - **Perlu Latihan** (skor < 60%)
+- **Benchmarking Waktu Respons (Skripsi Testing)**: Pencatatan otomatis waktu inferensi model (`inference_ms`) dan waktu respons ujung-ke-ujung klien (`client_e2e_ms`) ke berkas CSV persisten (`logs/benchmark_latency.csv`), lengkap dengan endpoint pengunduhan log langsung.
+- **Rate Limiting & Anti-Abuse (SlowAPI)**: Proteksi pembatasan laju permintaan untuk mencegah serangan *brute force*, spam bot, dan kelebihan beban CPU:
+  - Auth Login: 5 req / menit
+  - Auth Register: 5 req / jam
+  - Lupa & Reset Password: 3–5 req / 15 menit
+  - Evaluasi AI: 30 req / menit
+  - Pembaruan Password & Avatar: 5 req / 10–15 menit
+- **Manajemen Sesi & Riwayat**: Mencatat setiap sesi latihan dan skor evaluasi beserta rekaman audionya yang tersimpan aman di **Cloudinary**.
+- **Dashboard Statistik & Admin**: Menyediakan ringkasan performa harian pengguna, tren latihan 7 hari terakhir, manajemen huruf hijaiyah (84 kombinasi huruf & harakat), serta verifikasi laporan pelafalan pengguna (*feedback validation*).
+- **Persetujuan Privasi Data Audio**: Mekanisme *opt-in* bagi pengguna yang bersedia menyumbangkan rekaman suaranya ke *dataset pool* untuk keperluan penelitian (*active learning*).
 
 ## 🛠️ Teknologi yang Digunakan
-- **Framework Web**: FastAPI (Uvicorn)
-- **Machine Learning**: LiteRT (ai-edge-litert), TensorFlow (lokal fallback), Librosa, Numpy
-- **Generative AI**: Google GenAI SDK (Gemini)
-- **Database**: MySQL (MySQL Connector Python + Pooling, mendukung SSL & Custom Port)
-- **Penyimpanan Cloud**: Cloudinary SDK (untuk penyimpanan file audio)
-- **Keamanan & Autentikasi**: Passlib (Bcrypt - pinned ke versi 3.2.0), python-jose (JWT), Authlib (OAuth 2.0)
-- **Email & Utilitas**: smtplib, httpx, python-dotenv
+- **Framework Web**: FastAPI (Uvicorn dengan `--proxy-headers` untuk integrasi Cloudflare/Reverse Proxy)
+- **Machine Learning & Audio**: LiteRT (`ai-edge-litert`), Librosa, NumPy, PyAV (`av`)
+- **Database**: MySQL (MySQL Connector Python + Connection Pooling, kompatibel dengan MySQL 8.0+)
+- **Penyimpanan Cloud**: Cloudinary SDK (Audio & Avatar Pengguna)
+- **Keamanan & Rate Limiting**: SlowAPI, Limits, Passlib (Bcrypt), python-jose (JWT), Authlib (OAuth 2.0)
+- **Email & Utilitas**: smtplib (SMTP Gmail), httpx, python-dotenv
 
 ## 📋 Persyaratan Sistem
 - Python 3.11 atau lebih baru
-- MySQL Server (misalnya XAMPP atau MySQL native)
+- MySQL Server 8.0+ / MariaDB
+- Akun Cloudinary (untuk penyimpanan audio)
+- Akun Google / GitHub Developer (opsional, untuk SSO)
 
 ## 🚀 Cara Instalasi & Menjalankan
 
 ### 1. Setup Lingkungan Virtual (Virtual Environment)
-Disarankan menggunakan virtual environment agar dependensi tidak bentrok.
 ```bash
 python -m venv venv
 
-# Aktivasi Virtual Environment di Windows:
-venv\Scripts\activate
+# Aktivasi di Windows (PowerShell):
+venv\Scripts\Activate.ps1
 
 # Aktivasi di Linux/Mac:
 source venv/bin/activate
@@ -48,109 +55,101 @@ pip install -r requirements.txt
 ```
 
 ### 3. Konfigurasi Environment Variables
-1. Salin format dari `.env.example` atau buat file `.env` baru di *root* direktori.
-2. Atur kredensial database (username, password), *secret key* JWT, dan lokasi model.
-   Contoh `.env`:
-   ```env
-   # Keamanan & Web
-   SECRET_KEY=secret_anda
-   FRONTEND_URL=http://localhost:3000
+Salin format dari `.env.example` atau buat file `.env` baru di *root* direktori:
+```env
+# Keamanan & Web
+SECRET_KEY=secret_kunci_jwt_anda
+SESSION_SECRET_KEY=kunci_rahasia_sesi
+FRONTEND_URL=https://tarteelspace.web.id,http://localhost:3000
 
-   # Database MySQL
-   DB_HOST=localhost
-   DB_USER=root
-   DB_PASSWORD=
-   DB_DATABASE=db_tarteel_space
+# Database MySQL
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=
+DB_DATABASE=db_tarteel_space
+DB_SSL_DISABLED=True
 
-   # Konfigurasi SMTP (Reset Password)
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   SMTP_USER=email_anda@gmail.com
-   SMTP_PASSWORD=16_digit_app_password
+# Konfigurasi SMTP (Reset Password)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=email_anda@gmail.com
+SMTP_PASSWORD=16_digit_app_password
 
-   # Kredensial OAuth (SSO)
-   GOOGLE_CLIENT_ID=...
-   GOOGLE_CLIENT_SECRET=...
-   GITHUB_CLIENT_ID=...
-   GITHUB_CLIENT_SECRET=...
-   SESSION_SECRET_KEY=kunci_rahasia_sesi
+# Kredensial OAuth (SSO)
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
 
-   # Cloudinary (Penyimpanan Audio)
-   CLOUDINARY_CLOUD_NAME=...
-   CLOUDINARY_API_KEY=...
-   CLOUDINARY_API_SECRET=...
-
-   # Google Gemini AI (Penjelasan Tajwid)
-   GEMINI_API_KEY=...
-   ```
+# Cloudinary (Penyimpanan Audio & Avatar)
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...
+CLOUDINARY_API_SECRET=...
+```
 
 ### 4. Setup Database MySQL
-1. Pastikan server MySQL lokal Anda sedang berjalan atau siapkan database managed di cloud (seperti Aiven.io).
-2. Buat database baru bernama `db_tarteel_space` (sesuai `DB_DATABASE` di `.env`).
-3. Import skema tabel `db_tarteel_space.sql` ke dalam database tersebut. File SQL ini sudah disesuaikan agar kompatibel dengan MySQL 8.0+ / Aiven (memiliki tanda kurung pada default `(UUID())` dan melewati batasan aturan primary key secara otomatis selama proses impor).
+1. Pastikan server MySQL berjalan.
+2. Buat database bernama `db_tarteel_space`.
+3. Import file `db_tarteel_space_clean.sql` yang sudah bersih dan kompatibel penuh dengan MySQL 8.0+ (berisi 84 huruf hijaiyah terisi lengkap).
 
 ### 5. Konfigurasi Model AI
-Pastikan file pendukung model sudah berada pada folder `model/` (bisa diatur via `.env`):
-- `hijaiyah_model.tflite` (Model Utama TFLite)
-- `label_mapping.json` (Pemetaan label indeks kelas)
-- `norm_mean.npy` & `norm_std.npy` (Data statistik normalisasi Z-score)
+Pastikan berkas bobot model telah tersedia di folder `model/`:
+- `hijaiyah_model.tflite` (Model CNN TFLite)
+- `label_mapping.json` (Pemetaan 84 kelas label)
+- `norm_mean.npy` & `norm_std.npy` (Statistik normalisasi Z-Score MFCC)
 
-### 6. Jalankan Server Secara Lokal
-Untuk menjalankan server secara lokal (Windows) menggunakan virtual environment:
-1. Pastikan variabel di `.env` lokal Anda mengarah ke `DB_SSL_DISABLED=True` (jika MySQL lokal Anda tidak menggunakan SSL).
-2. Aktifkan mode UTF-8 pada terminal Windows Anda agar emoji tidak memicu error *Unicode*:
-   ```bash
-   $env:PYTHONUTF8=1 # Di PowerShell
-   ```
-3. Jalankan server menggunakan Uvicorn:
-   ```bash
-   venv\Scripts\python.exe -m uvicorn main:app --reload
-   ```
-Server akan berjalan di: `http://localhost:8000` dan Dokumentasi API interaktif di: **http://localhost:8000/docs**
+### 6. Menjalankan Server Lokal
+```bash
+uvicorn main:app --reload --port 8000
+```
+- API Base URL: `http://localhost:8000`
+- Dokumentasi Interaktif (Swagger UI): `http://localhost:8000/docs`
 
 ---
 
-## 🐳 Kontainerisasi & Deployment (Docker & Cloud)
+## 🐳 Kontainerisasi & Deployment (Docker / Coolify)
 
-Proyek ini sudah dilengkapi dengan konfigurasi Docker siap pakai untuk deployment di platform cloud berbasis container (seperti **Railway.app** atau **Render.com**):
+Proyek ini telah dikonfigurasi menggunakan Dockerfile yang dioptimalkan untuk Coolify / VPS:
 
-### 1. Build Docker Image Secara Lokal
-Untuk melakukan build image secara lokal:
+### 1. Build & Run Docker Lokal
 ```bash
 docker build -t tarteel-space-api .
-```
-*(Ukuran build context sangat ringan (~11 MB) karena dilindungi oleh file `.dockerignore`)*
-
-### 2. Jalankan Container Secara Lokal
-Pastikan `.env` telah disesuaikan (masukkan kredensial database Aiven Anda jika ingin mengetes koneksi cloud, dan pastikan `DB_SSL_DISABLED=False`):
-```bash
 docker run -p 8000:8000 --env-file .env tarteel-space-api
 ```
-*(Catatan: Jika port 8000 dialokasikan untuk proses lain, Anda dapat memetakannya ke port lain, misal `-p 8001:8000`)*
 
-### 3. Variabel Lingkungan di Cloud (Railway/Render)
-Saat mendeploy di cloud, pastikan untuk menyetel environment variables berikut pada dashboard Anda:
-* `DB_HOST` = `<host_database_aiven_atau_lain>`
-* `DB_PORT` = `<port_database_aiven>`
-* `DB_USER` = `<username_database>`
-* `DB_PASSWORD` = `<password_database>`
-* `DB_DATABASE` = `<nama_database>`
-* `DB_SSL_DISABLED` = `False`
-* `FRONTEND_URL` = `https://<nama-app-anda>.vercel.app` (URL frontend Vercel Anda)
-* `SECRET_KEY` = `<token_acak>`
-* `SESSION_SECRET_KEY` = `<token_acak_lain>`
-
-## 📂 Struktur Direktori Utama
-Proyek ini mengadopsi arsitektur modular standar FastAPI untuk kemudahan pemeliharaan:
-- `api/` : Berisi *routers* (endpoint API) yang dipisah per-fitur (auth, oauth, evaluate, letters, dsb.) dan komponen *dependencies* (seperti autentikasi & DB).
-- `core/` : Menyimpan konfigurasi global (`config.py`) yang membaca file `.env` dan utilitas keamanan (hashing, JWT).
-- `db/` : Berisi konfigurasi dan setup *connection pool* untuk MySQL.
-- `schemas/` : Mendefinisikan struktur data I/O (Request/Response) menggunakan Pydantic.
-- `services/` : Menyimpan logika inti (*business logic*), seperti `ml_service.py` untuk pemrosesan audio & inferensi CNN, `cloudinary_service.py` untuk manajemen *storage* cloud, serta `email_service.py` untuk pengiriman email.
-- `model/` : Direktori untuk menampung bobot model `.keras` (atau `.tflite`) dan file *state* normalisasi (`norm_mean.npy`, `norm_std.npy`).
-- `main.py` : Berfungsi secara eksklusif sebagai *entrypoint* aplikasi dan memuat seluruh router FastAPI.
-
-*(Catatan: Direktori penyimpanan lokal seperti `uploads/audio` dan `audio` kini sudah sepenuhnya tergantikan oleh Cloudinary, membuat backend menjadi 100% stateless dan cloud-ready)*
+### 2. Deployment di Coolify
+- **Build Pack**: Dockerfile.
+- **Port Expose**: `8000`.
+- **Persistent Storage (Volume)**: Sangat disarankan menambahkan volume untuk menjaga keutuhan log benchmark:
+  - Destination Path: `/app/logs`
+- **Reverse Proxy / Cloudflare**: Uvicorn sudah otomatis dikonfigurasi dengan flag `--proxy-headers --forwarded-allow-ips='*'` untuk membaca IP asli klien di balik Cloudflare/Traefik.
 
 ---
-**Tarteel Space API** | Dikembangkan oleh **Rizal Haryaputra** | Teknologi Informasi UNY | 2026
+
+## 📂 Struktur Direktori Utama
+```text
+tarteel-space-api/
+├── api/
+│   ├── deps.py              # Dependency injection (Auth JWT, Database connection)
+│   └── routers/             # Endpoint modular (auth, evaluate, letters, history, admin, profile, dsb.)
+├── core/
+│   ├── config.py            # Pembaca environment variable & konfigurasi CORS
+│   ├── limiter.py           # Inisialisasi Rate Limiter (SlowAPI)
+│   └── security.py          # Enkripsi password (Bcrypt) & pembuatan token JWT
+├── db/
+│   └── database.py          # MySQL Connection Pool
+├── logs/                    # Berkas log benchmarking waktu respons (benchmark_latency.csv)
+├── model/                   # Model LiteRT (.tflite), label mapping, & bobot normalisasi
+├── schemas/                 # Data validation & response schema (Pydantic)
+├── services/
+│   ├── cloudinary_service.py # Pengunggahan audio & gambar ke Cloudinary
+│   ├── email_service.py      # Pengiriman email reset password via SMTP
+│   └── ml_service.py         # Ekstraksi MFCC audio & inferensi CNN
+├── Dockerfile               # Konfigurasi container produksi
+├── requirements.txt         # Dependensi Python
+└── main.py                  # Entrypoint aplikasi FastAPI
+```
+
+---
+**Tarteel Space API** | Dikembangkan untuk Penelitian Tugas Akhir / Skripsi | 2026
