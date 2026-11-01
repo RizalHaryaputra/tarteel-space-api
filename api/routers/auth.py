@@ -1,12 +1,13 @@
 import uuid
 import secrets
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
 
 from api.deps import get_db
 from core.security import hash_password, verify_password, create_access_token
 from core.config import ACCESS_TOKEN_EXPIRE_MINUTES
+from core.limiter import limiter
 from schemas.auth import RegisterRequest, TokenResponse, ForgotPasswordRequest, ResetPasswordRequest
 from services.email_service import send_reset_email
 
@@ -15,7 +16,8 @@ router = APIRouter(prefix="/auth", tags=["Autentikasi"])
 RESET_TOKEN_EXPIRE_MINUTES = 15
 
 @router.post("/register", status_code=201)
-def register(req: RegisterRequest, db=Depends(get_db)):
+@limiter.limit("5/hour")
+def register(request: Request, req: RegisterRequest, db=Depends(get_db)):
     cursor = db.cursor()
     cursor.execute("SELECT id FROM users WHERE email = %s", (req.email,))
     if cursor.fetchone():
@@ -30,7 +32,8 @@ def register(req: RegisterRequest, db=Depends(get_db)):
     return {"message": "Akun berhasil dibuat", "user_id": user_id}
 
 @router.post("/login", response_model=TokenResponse)
-def login(form: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
     cursor = db.cursor(dictionary=True)
     cursor.execute("SELECT * FROM users WHERE email = %s", (form.username,))
     user = cursor.fetchone()
@@ -53,7 +56,8 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
     )
 
 @router.post("/forgot-password")
-def forgot_password(req: ForgotPasswordRequest, background_tasks: BackgroundTasks, db=Depends(get_db)):
+@limiter.limit("3/15minute")
+def forgot_password(request: Request, req: ForgotPasswordRequest, background_tasks: BackgroundTasks, db=Depends(get_db)):
     """
     Kirim link reset password ke email pengguna.
     """
@@ -88,7 +92,8 @@ def forgot_password(req: ForgotPasswordRequest, background_tasks: BackgroundTask
     return {"message": "Link reset password telah dikirim ke email Anda."}
 
 @router.post("/reset-password")
-def reset_password(req: ResetPasswordRequest, db=Depends(get_db)):
+@limiter.limit("5/15minute")
+def reset_password(request: Request, req: ResetPasswordRequest, db=Depends(get_db)):
     """
     Validasi token dan perbarui password pengguna.
     """
