@@ -4,11 +4,12 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import FileResponse
 
 from api.deps import get_db, get_current_user
 from db.database import get_db_connection
+from core.limiter import limiter
 from schemas.evaluation import EvaluationResult, EvaluationMetricPayload
 from services.ml_service import preprocess_and_extract_mfcc, run_inference
 from services.cloudinary_service import upload_audio_to_cloudinary
@@ -90,7 +91,9 @@ def download_benchmark_log(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/{letter_id}", response_model=EvaluationResult)
+@limiter.limit("30/minute")
 async def evaluate_pronunciation(
+    request: Request,
     letter_id: int,
     background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
