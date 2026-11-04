@@ -88,6 +88,30 @@ def load_audio_robust(audio_bytes: bytes) -> tuple:
         raise ValueError(f"Format audio tidak dikenali. Detail: {e}")
 
 
+def convert_to_normalized_wav_bytes(audio_bytes: bytes) -> bytes:
+    """
+    Konversi audio bytes (format apa pun: WebM/MP4/WAV/OGG) menjadi
+    berkas WAV PCM 16-bit standar dengan volume ternormalisasi agar
+    dapat diputar di semua perangkat (iOS, Android, Desktop) dengan suara jelas.
+    """
+    import soundfile as sf
+
+    try:
+        y, sr = load_audio_robust(audio_bytes)
+        if len(y) > 0:
+            peak = float(np.max(np.abs(y)))
+            if peak > 0.005:
+                y = (y / peak) * 0.85
+            y = np.clip(y, -1.0, 1.0)
+            buf = io.BytesIO()
+            sf.write(buf, y, sr, format="WAV", subtype="PCM_16")
+            return buf.getvalue()
+    except Exception as e:
+        print(f"[Audio-Norm] Gagal mengonversi ke WAV ternormalisasi ({e}), menggunakan bytes asli.")
+
+    return audio_bytes
+
+
 def preprocess_and_extract_mfcc(audio_bytes: bytes) -> np.ndarray:
     """
     Proses audio bytes → MFCC 3-channel siap inferensi.
@@ -98,7 +122,7 @@ def preprocess_and_extract_mfcc(audio_bytes: bytes) -> np.ndarray:
         raise ValueError("Audio kosong. Coba rekam ulang.")
 
     peak = np.max(np.abs(y))
-    if peak < 0.015:
+    if peak < 0.005:
         raise ValueError("Suara tidak terdeteksi atau terlalu pelan. Bicara lebih dekat ke mikrofon.")
 
     y = y / peak
