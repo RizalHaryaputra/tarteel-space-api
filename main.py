@@ -53,21 +53,15 @@ app = FastAPI(
 # Hubungkan instance limiter ke app state
 app.state.limiter = limiter
 
-# Custom Exception Handler untuk respon 429 yang informatif dan menyertakan header Retry-After
+# Custom Exception Handler untuk respon 429 yang ramah
 @app.exception_handler(RateLimitExceeded)
 async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    response = JSONResponse(
+    return JSONResponse(
         status_code=429,
         content={
             "detail": "Terlalu banyak permintaan. Silakan tunggu beberapa saat sebelum mencoba kembali."
         }
     )
-    # Inject header Retry-After dan X-RateLimit-*
-    if hasattr(request.state, "view_rate_limit"):
-        response = request.app.state.limiter._inject_headers(
-            response, request.state.view_rate_limit
-        )
-    return response
 
 app.add_middleware(
     CORSMiddleware,
