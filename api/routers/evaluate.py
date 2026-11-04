@@ -2,7 +2,7 @@ import uuid
 import time
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import FileResponse
@@ -57,7 +57,9 @@ async def record_evaluation_metric(
     server_data = SERVER_BENCHMARK_CACHE.pop(payload.evaluation_id, None)
     inference_ms = server_data["inference_ms"] if server_data else 0.0
 
-    now_iso = datetime.now().isoformat()
+    # Gunakan zona waktu Indonesia Barat (WIB / UTC+7) secara eksplisit
+    wib_tz = timezone(timedelta(hours=7))
+    now_iso = datetime.now(wib_tz).strftime("%Y-%m-%d %H:%M:%S")
     device = (payload.device_type or "desktop").lower()
 
     file_exists = log_file.exists() and log_file.stat().st_size > 0

@@ -3,15 +3,18 @@ FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=Asia/Jakarta
 
 # Tentukan working directory
 WORKDIR /app
 
-# Instal dependensi sistem yang dibutuhkan oleh librosa/soundfile (libsndfile) dan av (ffmpeg)
+# Instal dependensi sistem yang dibutuhkan oleh librosa/soundfile (libsndfile), av (ffmpeg), dan tzdata (zona waktu)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     ffmpeg \
+    tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
 
 # Salin requirements.txt terlebih dahulu untuk efisiensi caching layer

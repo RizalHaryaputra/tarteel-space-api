@@ -30,6 +30,7 @@ DB_CONFIG = {
     "database": os.getenv("DB_DATABASE", "db_tarteel_space"),
     "charset": os.getenv("DB_CHARSET", "utf8mb4"),
     "ssl_disabled": os.getenv("DB_SSL_DISABLED", "False").lower() in ("true", "1", "yes"),
+    "init_command": "SET time_zone = '+07:00'",
 }
 
 MODEL_PATH = os.getenv("MODEL_PATH", "./model/hijaiyah_model.tflite")
