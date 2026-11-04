@@ -1,11 +1,15 @@
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from slowapi.errors import RateLimitExceeded
+
 from core.config import (
     MODEL_PATH, LABEL_MAP_PATH, NORM_MEAN_PATH, NORM_STD_PATH, SESSION_SECRET_KEY, CORS_ORIGINS
 )
+from core.limiter import limiter
 from services.ml_service import ml_state, reload_and_warmup_model
 from api.routers import auth, letters, evaluate, sessions, history, oauth, feedback, admin, profile
 
@@ -45,6 +49,25 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Hubungkan instance limiter ke app state
+app.state.limiter = limiter
+
+# Custom Exception Handler untuk respon 429 yang informatif dan menyertakan header Retry-After
+@app.exception_handler(RateLimitExceeded)
+async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "detail": "Terlalu banyak permintaan. Silakan tunggu beberapa saat sebelum mencoba kembali."
+        }
+    )
+    # Inject header Retry-After dan X-RateLimit-*
+    if hasattr(request.state, "view_rate_limit"):
+        response = request.app.state.limiter._inject_headers(
+            response, request.state.view_rate_limit
+        )
+    return response
 
 app.add_middleware(
     CORSMiddleware,

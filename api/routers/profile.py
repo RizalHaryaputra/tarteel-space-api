@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from api.deps import get_current_user, get_db
 from schemas.profile import ProfileResponse, ProfileUpdateRequest, PasswordUpdateRequest
 from core.security import verify_password, hash_password
+from core.limiter import limiter
 from services.cloudinary_service import upload_image_to_cloudinary
 
 router = APIRouter(prefix="/profile", tags=["Profil"])
@@ -40,7 +41,8 @@ def update_profile(req: ProfileUpdateRequest, current_user: dict = Depends(get_c
     return {"message": "Profil berhasil diperbarui"}
 
 @router.put("/me/password")
-def update_password(req: PasswordUpdateRequest, current_user: dict = Depends(get_current_user), db=Depends(get_db)):
+@limiter.limit("5/15minute")
+def update_password(request: Request, req: PasswordUpdateRequest, current_user: dict = Depends(get_current_user), db=Depends(get_db)):
     cursor = db.cursor(dictionary=True)
     cursor.execute("SELECT auth_provider, password_hash FROM users WHERE id = %s", (current_user["id"],))
     user = cursor.fetchone()
@@ -63,7 +65,8 @@ def update_password(req: PasswordUpdateRequest, current_user: dict = Depends(get
     return {"message": "Password berhasil diperbarui"}
 
 @router.put("/me/avatar")
-async def update_avatar(file: UploadFile = File(...), current_user: dict = Depends(get_current_user), db=Depends(get_db)):
+@limiter.limit("5/10minute")
+async def update_avatar(request: Request, file: UploadFile = File(...), current_user: dict = Depends(get_current_user), db=Depends(get_db)):
     if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
         raise HTTPException(400, "Format gambar tidak didukung. Gunakan JPG, PNG, atau WEBP.")
         
