@@ -11,7 +11,7 @@ from api.deps import get_db, get_current_user
 from db.database import get_db_connection
 from core.limiter import limiter
 from schemas.evaluation import EvaluationResult, EvaluationMetricPayload
-from services.ml_service import preprocess_and_extract_mfcc, run_inference
+from services.ml_service import preprocess_and_extract_mfcc, run_inference, convert_to_normalized_wav_bytes
 from services.cloudinary_service import upload_audio_to_cloudinary
 
 router = APIRouter(prefix="/evaluate", tags=["Evaluasi Pelafalan"])
@@ -23,7 +23,8 @@ SERVER_BENCHMARK_CACHE: Dict[str, Dict[str, Any]] = {}
 def upload_audio_background_task(eval_id: str, audio_bytes: bytes, audio_filename: str):
     """Background task to upload audio to Cloudinary and update the database."""
     try:
-        audio_path = upload_audio_to_cloudinary(audio_bytes, audio_filename, folder="evaluations")
+        wav_bytes = convert_to_normalized_wav_bytes(audio_bytes)
+        audio_path = upload_audio_to_cloudinary(wav_bytes, audio_filename, folder="evaluations")
         print(f"[Cloudinary-BG] Audio berhasil diunggah ke cloud: {audio_path}")
 
         db = get_db_connection()
@@ -101,9 +102,14 @@ async def evaluate_pronunciation(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    ALLOWED_TYPES = ("audio/wav", "audio/wave", "audio/webm", "audio/ogg", "audio/mp4")
+    ALLOWED_TYPES = (
+        "audio/wav", "audio/wave", "audio/x-wav",
+        "audio/webm", "audio/ogg", "audio/mp4",
+        "audio/aac", "audio/mpeg", "audio/x-m4a",
+        "video/webm", "video/mp4", "application/octet-stream"
+    )
     content_type = (audio.content_type or "").lower()
-    if not any(content_type.startswith(t) for t in ALLOWED_TYPES):
+    if content_type and not any(content_type.startswith(t) for t in ALLOWED_TYPES):
         raise HTTPException(400, f"Format tidak didukung: {audio.content_type}")
 
     cursor = db.cursor(dictionary=True)
