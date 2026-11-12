@@ -127,7 +127,7 @@ async def evaluate_pronunciation(
     try:
         mfcc_feature = preprocess_and_extract_mfcc(audio_bytes)
     except Exception as e:
-        raise HTTPException(422, f"Gagal memproses audio: {str(e)}")
+        raise HTTPException(422, str(e))
 
     expected_label = letter["model_label"]
 
@@ -137,6 +137,40 @@ async def evaluate_pronunciation(
     inference_ms = (time.perf_counter() - t_inf_start) * 1000
 
     accuracy_score = round(expected_confidence, 2)
+
+    # Format label prediksi teratas agar ramah dibaca (misal: 'ain_fathah' -> 'Ain Fathah')
+    formatted_top_label = " ".join(p.capitalize() for p in top_label.split("_")) if top_label else ""
+
+    # Ambang batas pengenalan suara huruf hijaiyah (Lapisan 3)
+    # Jika keyakinan huruf target < 40% DAN keyakinan prediksi teratas model juga < 40%,
+    # maka suara dianggap tidak dikenali sebagai pelafalan huruf hijaiyah (noise / batuk / suara acak).
+    if accuracy_score < 40.0 and top_confidence < 40.0:
+        status_label = "Tidak Dikenali"
+        accuracy_score = 0.0
+        top_label = ""
+        top3 = []
+        feedback = (
+            f"Suara tidak dikenali sebagai pelafalan huruf hijaiyah. Pastikan Anda melafalkan huruf target "
+            f"({letter['base_letter']} {letter['harakat']}) secara jelas dan hindari suara bising atau batuk di sekitar mikrofon."
+        )
+    elif accuracy_score < 40.0:
+        # Suara terdeteksi sebagai huruf hijaiyah lain (top_confidence >= 40%) namun bukan huruf target
+        status_label = "Perlu Latihan"
+        feedback = (
+            f"Pelafalan belum tepat untuk target {letter['base_letter']} {letter['harakat']}. "
+            f"Sistem lebih mendeteksi kemiripan dengan huruf '{formatted_top_label}' ({top_confidence:.1f}%). "
+            f"Dengarkan kembali contoh audio ustadz dan coba ulangi perlahan."
+        )
+    elif accuracy_score >= 80.0:
+        status_label = "Sangat Baik"
+        feedback = f"Luar biasa! Pelafalan {letter['base_letter']} {letter['harakat']} Anda sudah sangat tepat dan artikulasi makhrajnya terdengar jelas."
+    elif accuracy_score >= 60.0:
+        status_label = "Cukup Baik"
+        feedback = f"Cukup baik! Pelafalan {letter['base_letter']} {letter['harakat']} sudah mendekati tepat, latih kembali kejelasan artikulasi makhrajnya."
+    else:  # 40.0 <= accuracy_score < 60.0
+        status_label = "Perlu Latihan"
+        feedback = f"Pelafalan {letter['base_letter']} {letter['harakat']} sudah mengarah ke huruf target, namun artikulasi makhraj masih perlu dilatih kembali agar lebih jelas."
+
     top3_json = json.dumps(top3)
 
     eval_id = str(uuid.uuid4())
@@ -156,17 +190,6 @@ async def evaluate_pronunciation(
 
     # Schedule the upload to happen in the background
     background_tasks.add_task(upload_audio_background_task, eval_id, audio_bytes, audio_filename)
-
-    # Feedback dinamis berbasis persentase akurasi
-    if accuracy_score >= 80:
-        status_label = "Sangat Baik"
-        feedback = f"Luar biasa! Pelafalan {letter['base_letter']} {letter['harakat']} Anda sudah sangat tepat dan artikulasi makhrajnya terdengar jelas."
-    elif accuracy_score >= 60:
-        status_label = "Cukup Baik"
-        feedback = f"Cukup baik! Pelafalan {letter['base_letter']} {letter['harakat']} sudah mendekati tepat, latih kembali kejelasan artikulasi makhrajnya."
-    else:
-        status_label = "Perlu Latihan"
-        feedback = f"Perlu latihan lagi. Dengarkan kembali contoh pelafalan referensi untuk huruf {letter['base_letter']} {letter['harakat']} dan coba ulangi perlahan."
 
     print(f"[Evaluate] {letter['base_letter']} | Inferensi: {inference_ms:.2f} ms")
 
