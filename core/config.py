@@ -33,15 +33,20 @@ DB_CONFIG = {
     "init_command": "SET time_zone = '+07:00'",
 }
 
-MODEL_PATH = os.getenv("MODEL_PATH", "./model/hijaiyah_model.tflite")
+MODEL_PATH = os.getenv("MODEL_PATH", "./model/hijaiyah_model_full_aug.tflite")
 LABEL_MAP_PATH = os.getenv("LABEL_MAP_PATH", "./model/label_mapping.json")
-NORM_MEAN_PATH = os.getenv("NORM_MEAN_PATH", "./model/norm_mean.npy")
-NORM_STD_PATH = os.getenv("NORM_STD_PATH", "./model/norm_std.npy")
+NORM_MEAN_PATH = os.getenv("NORM_MEAN_PATH", "./model/norm_mean_full_aug.npy")
+NORM_STD_PATH = os.getenv("NORM_STD_PATH", "./model/norm_std_full_aug.npy")
 
-SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "22050"))
-DURATION = float(os.getenv("DURATION", "2.0"))
+SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "16000"))
+DURATION = float(os.getenv("DURATION", "1.2"))
 MAX_LEN = int(SAMPLE_RATE * DURATION)
-N_MFCC = int(os.getenv("N_MFCC", "40"))
-N_FFT = int(os.getenv("N_FFT", "2048"))
-HOP_LEN = int(os.getenv("HOP_LEN", "512"))
+TRIM_TOP_DB = int(os.getenv("TRIM_TOP_DB", "20"))
+PRE_EMPHASIS = float(os.getenv("PRE_EMPHASIS", "0.97"))
+WIN_LENGTH = int(os.getenv("WIN_LENGTH", "320"))
+HOP_LEN = int(os.getenv("HOP_LEN", "160"))
+N_FFT = int(os.getenv("N_FFT", "512"))
+N_MELS = int(os.getenv("N_MELS", "40"))
+N_MFCC = int(os.getenv("N_MFCC", "13"))
+DELTA_WIDTH = int(os.getenv("DELTA_WIDTH", "9"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "2.0"))

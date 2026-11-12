@@ -1,0 +1,45 @@
+{
+  "sample_rate": 16000,
+  "duration": 1.2,
+  "max_len": 19200,
+  "trim_top_db": 20,
+  "pre_emphasis": 0.97,
+  "window": "hamming",
+  "win_length": 320,
+  "hop_length": 160,
+  "n_fft": 512,
+  "n_mels": 40,
+  "n_mfcc": 13,
+  "delta_width": 9,
+  "feature_channels": [
+    "mfcc",
+    "delta",
+    "delta2"
+  ],
+  "feature_shape": [
+    3,
+    13,
+    121
+  ],
+  "normalization": "global",
+  "augmentation": {
+    "order_per_sample": [
+      "original",
+      "pitch-2",
+      "pitch-1",
+      "pitch+1",
+      "pitch+2",
+      "noise_20dB"
+    ],
+    "pitch_shift_semitones": [
+      -2,
+      -1,
+      1,
+      2
+    ],
+    "bins_per_octave": 12,
+    "noise_snr_db": 20,
+    "seed": 42,
+    "multiplier": 6
+  }
+}

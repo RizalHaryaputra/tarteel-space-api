@@ -95,9 +95,10 @@ CLOUDINARY_API_SECRET=...
 
 ### 5. Konfigurasi Model AI
 Pastikan berkas bobot model telah tersedia di folder `model/`:
-- `hijaiyah_model.tflite` (Model CNN TFLite)
+- `hijaiyah_model_full_aug.tflite` (Model CNN TFLite - 84 kelas)
 - `label_mapping.json` (Pemetaan 84 kelas label)
-- `norm_mean.npy` & `norm_std.npy` (Statistik normalisasi Z-Score MFCC)
+- `norm_mean_full_aug.npy` & `norm_std_full_aug.npy` (Statistik normalisasi Z-Score MFCC)
+- `preprocessing_params.json` (Parameter pra-pemrosesan & MFCC)
 
 ### 6. Menjalankan Server Lokal
 ```bash
