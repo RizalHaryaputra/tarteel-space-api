@@ -141,31 +141,62 @@ def preprocess_and_extract_mfcc(audio_bytes: bytes) -> np.ndarray:
     if len(y) == 0:
         raise ValueError("Audio kosong. Coba rekam ulang.")
 
-    peak = np.max(np.abs(y))
-    if peak < 0.005:
-        raise ValueError("Suara tidak terdeteksi atau terlalu pelan. Bicara lebih dekat ke mikrofon.")
+    peak = float(np.max(np.abs(y)))
+    rms = float(np.sqrt(np.mean(y**2)))
 
-    # 1. Trim silence (hapus keheningan di awal & akhir)
-    y, _ = librosa.effects.trim(y, top_db=TRIM_TOP_DB)
+    # Lapisan 1: Pengecekan Ambang Energi Suara Nyata (Noise Gate)
+    # Suara pelafalan vokal manusia normal memiliki peak >= 0.08 dan rms >= 0.010.
+    # Desis mikrofon / ruangan hening memiliki peak < 0.08 atau rms < 0.010.
+    if peak < 0.08 or rms < 0.010:
+        raise ValueError("Suara pelafalan tidak terdeteksi (hanya terdeteksi keheningan atau desis ruangan). Mohon dekatkan mikrofon dan ucapkan huruf dengan jelas.")
 
-    if len(y) == 0:
-        raise ValueError("Audio hanya berisi keheningan setelah diproses.")
+    # Lapisan 2: Trim silence (hapus keheningan di awal & akhir) dan validasi durasi aktif
+    y_trimmed, _ = librosa.effects.trim(y, top_db=TRIM_TOP_DB)
 
-    # 2. Pad atau truncate ke panjang tetap (MAX_LEN = 19200 sampel / 1.2 detik)
+    if len(y_trimmed) == 0:
+        raise ValueError("Audio hanya berisi keheningan setelah diproses. Mohon rekam ulang.")
+
+    # Validasi durasi vokal aktif (minimal 0.25 detik / 4000 sampel)
+    # untuk menyaring suara ketukan sesaat, bunyi klik mouse, atau batuk sekejap
+    MIN_VOICE_SAMPLES = int(SAMPLE_RATE * 0.25)
+    if len(y_trimmed) < MIN_VOICE_SAMPLES:
+        raise ValueError("Durasi pelafalan terlalu singkat atau hanya berupa ketukan. Ucapkan makhraj huruf secara utuh.")
+
+    # Lapisan 3: Deteksi Keaktifan Suara (VAD) & Analisis Spektral (Desis/Bising Statis)
+    frame_rms = librosa.feature.rms(y=y_trimmed, frame_length=WIN_LENGTH, hop_length=HOP_LEN)[0]
+    active_frames = int(np.sum(frame_rms >= 0.025))
+    std_rms = float(np.std(frame_rms))
+    flatness = float(np.mean(librosa.feature.spectral_flatness(y=y_trimmed)))
+
+    # Syarat 1: Harus ada frame vokal aktif minimal 6 frame (~60-80ms)
+    if active_frames < 6:
+        raise ValueError("Suara pelafalan tidak terdeteksi secara utuh (terlalu pelan atau hanya berupa ketukan singkat). Mohon ucapkan makhraj huruf dengan jelas.")
+
+    # Syarat 2: Menolak derau bising konstan/statis (monotonous hum/hiss tanpa modulasi bicara)
+    if std_rms < 0.005:
+        raise ValueError("Audio terdeteksi sebagai derau bising statis yang konstan. Pastikan ruangan hening dan dekatkan mikrofon.")
+
+    # Syarat 3: Menolak white noise / desis mikrofon buatan yang datar di seluruh frekuensi
+    if flatness > 0.35:
+        raise ValueError("Audio hanya terdeteksi sebagai desis atau derau bising ruangan. Mohon lafalkan huruf hijaiyah dengan jelas di dekat mikrofon.")
+
+    y = y_trimmed
+
+    # 3. Pad atau truncate ke panjang tetap (MAX_LEN = 19200 sampel / 1.2 detik)
     if len(y) < MAX_LEN:
         y = np.pad(y, (0, MAX_LEN - len(y)), mode="constant")
     else:
         y = y[:MAX_LEN]
 
-    # 3. Normalisasi amplitudo ke rentang [-1, 1]
+    # 4. Normalisasi amplitudo ke rentang [-1, 1]
     max_val = np.max(np.abs(y))
     if max_val > 0:
         y = y / max_val
 
-    # 4. Pre-emphasis
+    # 5. Pre-emphasis filter
     y = pre_emphasis(y, alpha=PRE_EMPHASIS)
 
-    # 5. Ekstraksi MFCC + Delta + Delta-Delta (3 kanal)
+    # 6. Ekstraksi MFCC + Delta + Delta-Delta (3 kanal)
     mfcc = librosa.feature.mfcc(
         y=y,
         sr=SAMPLE_RATE,
@@ -214,8 +245,11 @@ def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple
     raw_output = interpreter.get_tensor(output_details[0]['index'])[0]
 
     if abs(raw_output.sum() - 1.0) < 0.01:
-        logit_proxy = np.log(np.clip(raw_output, 1e-9, 1.0))
-        output = softmax_with_temperature(logit_proxy, TEMPERATURE)
+        if TEMPERATURE == 1.0:
+            output = raw_output
+        else:
+            logit_proxy = np.log(np.clip(raw_output, 1e-9, 1.0))
+            output = softmax_with_temperature(logit_proxy, TEMPERATURE)
     else:
         output = softmax_with_temperature(raw_output, TEMPERATURE)
 
@@ -225,11 +259,13 @@ def run_inference(mfcc_feature: np.ndarray, expected_label: str = None) -> tuple
 
     expected_confidence = 0.0
     if expected_label:
-        exp_idx = None
-        for key, idx in label2idx.items():
-            if expected_label in key:
-                exp_idx = idx
-                break
+        exp_idx = label2idx.get(expected_label)
+        if exp_idx is None:
+            exp_lower = expected_label.lower()
+            for key, idx in label2idx.items():
+                if key.lower() == exp_lower:
+                    exp_idx = idx
+                    break
         if exp_idx is not None:
             expected_confidence = float(output[exp_idx]) * 100.0
     elif expected_label is None:
